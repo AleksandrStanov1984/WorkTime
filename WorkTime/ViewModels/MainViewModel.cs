@@ -79,6 +79,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(ProjectWorkedTimeText));
             OnPropertyChanged(nameof(EarnedAmountText));
+            OnPropertyChanged(nameof(HourlyRateText));
             OnPropertyChanged(nameof(AgreedPriceText));
             OnPropertyChanged(nameof(RemainingAmountText));
             OnPropertyChanged(nameof(EffectiveRateText));
@@ -97,6 +98,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ProjectAnalytics is null
             ? "€0,00"
             : $"€{ProjectAnalytics.EarnedAmount:N2}";
+
+    public string HourlyRateText =>
+   ProjectAnalytics is null
+       ? "€0,00/ч"
+       : $"€{ProjectAnalytics.HourlyRate:N2}/ч";
 
     public string AgreedPriceText =>
         ProjectAnalytics?.AgreedPrice is null
