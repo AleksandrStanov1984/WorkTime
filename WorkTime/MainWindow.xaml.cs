@@ -1,14 +1,19 @@
-﻿using System.Windows;
+﻿using System.ComponentModel;
+using System.Drawing;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using WorkTime.Models;
 using WorkTime.ViewModels;
+using Forms = System.Windows.Forms;
 
 namespace WorkTime;
 
 public partial class MainWindow : Window
 {
     private readonly DispatcherTimer _displayTimer;
+    private readonly Forms.NotifyIcon _trayIcon;
+    private bool _allowClose;
 
     public MainWindow()
     {
@@ -21,14 +26,36 @@ public partial class MainWindow : Window
 
         _displayTimer.Tick += DisplayTimer_Tick;
 
+        _trayIcon = new Forms.NotifyIcon
+        {
+            Icon = SystemIcons.Application,
+            Text = "WorkTime — Stopped",
+            Visible = true
+        };
+
+        var contextMenu = new Forms.ContextMenuStrip();
+
+        contextMenu.Items.Add(
+            "Открыть WorkTime",
+            null,
+            (_, _) => Dispatcher.Invoke(ShowFromTray));
+
+        contextMenu.Items.Add(new Forms.ToolStripSeparator());
+
+        contextMenu.Items.Add(
+            "Выход",
+            null,
+            (_, _) => Dispatcher.Invoke(ExitApplication));
+
+        _trayIcon.ContextMenuStrip = contextMenu;
+
+        _trayIcon.DoubleClick +=
+            (_, _) => Dispatcher.Invoke(ShowFromTray);
+
         Loaded += (_, _) =>
         {
             _displayTimer.Start();
-        };
-
-        Closed += (_, _) =>
-        {
-            _displayTimer.Stop();
+            UpdateTrayState();
         };
     }
 
@@ -42,6 +69,58 @@ public partial class MainWindow : Window
         await ViewModel.RefreshTodayAsync();
         await ViewModel.RefreshProjectAnalyticsAsync();
         await ViewModel.CheckDailyTargetAsync();
+
+        UpdateTrayState();
+    }
+
+    protected override void OnClosing(
+        CancelEventArgs e)
+    {
+        if (!_allowClose)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+
+        _displayTimer.Stop();
+
+        _trayIcon.Visible = false;
+        _trayIcon.Dispose();
+
+        base.OnClosing(e);
+    }
+
+    private void ShowFromTray()
+    {
+        Show();
+
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
+    }
+
+    private void ExitApplication()
+    {
+        _allowClose = true;
+        Close();
+        Application.Current.Shutdown();
+    }
+
+    private void UpdateTrayState()
+    {
+        _trayIcon.Text = ViewModel.TimerState switch
+        {
+            WorkTimerState.Running => "WorkTime — Running",
+            WorkTimerState.Paused => "WorkTime — Paused",
+            _ => "WorkTime — Stopped"
+        };
     }
 
     private async void Start_Click(
@@ -49,6 +128,7 @@ public partial class MainWindow : Window
         RoutedEventArgs e)
     {
         await ViewModel.StartAsync();
+        UpdateTrayState();
     }
 
     private async void Pause_Click(
@@ -56,6 +136,7 @@ public partial class MainWindow : Window
         RoutedEventArgs e)
     {
         await ViewModel.PauseAsync();
+        UpdateTrayState();
     }
 
     private async void Resume_Click(
@@ -63,6 +144,7 @@ public partial class MainWindow : Window
         RoutedEventArgs e)
     {
         await ViewModel.ResumeAsync();
+        UpdateTrayState();
     }
 
     private async void Finish_Click(
@@ -70,6 +152,7 @@ public partial class MainWindow : Window
         RoutedEventArgs e)
     {
         await ViewModel.FinishAsync();
+        UpdateTrayState();
     }
 
     private async void NewProject_Click(
@@ -137,6 +220,7 @@ public partial class MainWindow : Window
         }
 
         await ViewModel.SwitchProjectAsync(project);
+        UpdateTrayState();
     }
 
     private async void History_Click(
