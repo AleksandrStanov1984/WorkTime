@@ -10,18 +10,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly ProjectService _projectService;
     private readonly WorkTimerService _timerService;
     private readonly TimeAggregationService _aggregationService;
+    private readonly ProjectAnalyticsService _analyticsService;
 
     private Project? _selectedProject;
     private TimeSpan _todayWorkedTime;
+    private ProjectAnalytics? _projectAnalytics;
 
     public MainViewModel(
         ProjectService projectService,
         WorkTimerService timerService,
-        TimeAggregationService aggregationService)
+        TimeAggregationService aggregationService,
+        ProjectAnalyticsService analyticsService)
     {
         _projectService = projectService;
         _timerService = timerService;
         _aggregationService = aggregationService;
+        _analyticsService = analyticsService;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -65,6 +69,58 @@ public sealed class MainViewModel : INotifyPropertyChanged
         $"{TodayWorkedTime.Minutes:00}:" +
         $"{TodayWorkedTime.Seconds:00}";
 
+    public ProjectAnalytics? ProjectAnalytics
+    {
+        get => _projectAnalytics;
+        private set
+        {
+            _projectAnalytics = value;
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ProjectWorkedTimeText));
+            OnPropertyChanged(nameof(EarnedAmountText));
+            OnPropertyChanged(nameof(AgreedPriceText));
+            OnPropertyChanged(nameof(RemainingAmountText));
+            OnPropertyChanged(nameof(EffectiveRateText));
+            OnPropertyChanged(nameof(ProgressText));
+            OnPropertyChanged(nameof(HasAgreedPrice));
+        }
+    }
+
+    public string ProjectWorkedTimeText =>
+        ProjectAnalytics is null
+            ? "00:00"
+            : $"{(int)ProjectAnalytics.WorkedTime.TotalHours:00}:" +
+              $"{ProjectAnalytics.WorkedTime.Minutes:00}";
+
+    public string EarnedAmountText =>
+        ProjectAnalytics is null
+            ? "€0,00"
+            : $"€{ProjectAnalytics.EarnedAmount:N2}";
+
+    public string AgreedPriceText =>
+        ProjectAnalytics?.AgreedPrice is null
+            ? "Не задана"
+            : $"€{ProjectAnalytics.AgreedPrice.Value:N2}";
+
+    public string RemainingAmountText =>
+        ProjectAnalytics?.RemainingAmount is null
+            ? "—"
+            : $"€{ProjectAnalytics.RemainingAmount.Value:N2}";
+
+    public string EffectiveRateText =>
+        ProjectAnalytics?.EffectiveHourlyRate is null
+            ? "—"
+            : $"€{ProjectAnalytics.EffectiveHourlyRate.Value:N2}/ч";
+
+    public string ProgressText =>
+        ProjectAnalytics?.ProgressPercent is null
+            ? "—"
+            : $"{ProjectAnalytics.ProgressPercent.Value:N1}%";
+
+    public bool HasAgreedPrice =>
+        ProjectAnalytics?.AgreedPrice is not null;
+
     public WorkTimerState TimerState =>
         _timerService.State;
 
@@ -104,6 +160,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
 
         await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
 
         NotifyTimerStateChanged();
     }
@@ -119,6 +176,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             SelectedProject.Id);
 
         await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
 
         NotifyTimerStateChanged();
     }
@@ -128,6 +186,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await _timerService.PauseAsync();
 
         await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
 
         NotifyTimerStateChanged();
     }
@@ -137,6 +196,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await _timerService.ResumeAsync();
 
         await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
 
         NotifyTimerStateChanged();
     }
@@ -146,17 +206,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await _timerService.FinishAsync();
 
         await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
 
         NotifyTimerStateChanged();
     }
 
     public async Task SwitchProjectAsync(
-        Project project)
+    Project project)
     {
         if (_timerService.State !=
             WorkTimerState.Running)
         {
             SelectedProject = project;
+
+            await RefreshProjectAnalyticsAsync();
+
             return;
         }
 
@@ -164,6 +228,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             project.Id)
         {
             SelectedProject = project;
+
+            await RefreshProjectAnalyticsAsync();
+
             return;
         }
 
@@ -173,6 +240,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SelectedProject = project;
 
         await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
 
         NotifyTimerStateChanged();
     }
@@ -194,33 +262,38 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SelectedProject =
             Projects.First(
                 x => x.Id == project.Id);
+
+        await RefreshProjectAnalyticsAsync();
     }
 
     public async Task UpdateSelectedProjectAsync(
-    string name,
-    decimal hourlyRate,
-    decimal? agreedPrice,
-    int? dailyTargetMinutes,
-    int? reminderBeforeMinutes,
-    bool notificationsEnabled)
+        string name,
+        decimal hourlyRate,
+        decimal? agreedPrice,
+        int? dailyTargetMinutes,
+        int? reminderBeforeMinutes,
+        bool notificationsEnabled)
     {
         if (SelectedProject is null)
         {
             return;
         }
 
-        var project = await _projectService.UpdateAsync(
-            SelectedProject.Id,
-            name,
-            hourlyRate,
-            agreedPrice,
-            dailyTargetMinutes,
-            reminderBeforeMinutes,
-            notificationsEnabled);
+        var project =
+            await _projectService.UpdateAsync(
+                SelectedProject.Id,
+                name,
+                hourlyRate,
+                agreedPrice,
+                dailyTargetMinutes,
+                reminderBeforeMinutes,
+                notificationsEnabled);
 
         SelectedProject = project;
 
         OnPropertyChanged(nameof(Projects));
+
+        await RefreshProjectAnalyticsAsync();
     }
 
     public async Task RefreshTodayAsync()
@@ -229,6 +302,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await _aggregationService
                 .GetWorkedTimeForDayAsync(
                     DateTime.Today);
+    }
+
+    public async Task RefreshProjectAnalyticsAsync()
+    {
+        if (SelectedProject is null)
+        {
+            ProjectAnalytics = null;
+            return;
+        }
+
+        ProjectAnalytics =
+            await _analyticsService.GetAsync(
+                SelectedProject.Id);
     }
 
     public HistoryViewModel CreateHistoryViewModel()

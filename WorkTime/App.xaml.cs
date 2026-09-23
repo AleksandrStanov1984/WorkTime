@@ -23,15 +23,25 @@ public partial class App : Application
             new ProjectService(_dbContext);
 
         var timerService =
-            new WorkTimerService(_dbContext, clock);
+            new WorkTimerService(
+                _dbContext,
+                clock);
 
         var aggregationService =
-            new TimeAggregationService(_dbContext, clock);
+            new TimeAggregationService(
+                _dbContext,
+                clock);
+
+        var analyticsService =
+            new ProjectAnalyticsService(
+                _dbContext,
+                clock);
 
         var viewModel = new MainViewModel(
             projectService,
             timerService,
-            aggregationService);
+            aggregationService,
+            analyticsService);
 
         await viewModel.InitializeAsync();
 

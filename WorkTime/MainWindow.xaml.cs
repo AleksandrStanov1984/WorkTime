@@ -1,9 +1,8 @@
 ﻿using System.Windows;
-using System.Windows.Threading;
-using WorkTime.ViewModels;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using WorkTime.Models;
-
+using WorkTime.ViewModels;
 
 namespace WorkTime;
 
@@ -41,6 +40,7 @@ public partial class MainWindow : Window
         EventArgs e)
     {
         await ViewModel.RefreshTodayAsync();
+        await ViewModel.RefreshProjectAnalyticsAsync();
     }
 
     private async void Start_Click(
@@ -90,45 +90,9 @@ public partial class MainWindow : Window
             dialog.HourlyRate);
     }
 
-    private async void Project_SelectionChanged(
-    object sender,
-    SelectionChangedEventArgs e)
-    {
-        if (!IsLoaded)
-        {
-            return;
-        }
-
-        if (sender is not ComboBox comboBox ||
-            comboBox.SelectedItem is not Project project)
-        {
-            return;
-        }
-
-        await ViewModel.SwitchProjectAsync(project);
-    }
-
-    private async void History_Click(
-    object sender,
-    RoutedEventArgs e)
-    {
-        var viewModel =
-            ViewModel.CreateHistoryViewModel();
-
-        await viewModel.LoadAsync();
-
-        var window = new HistoryWindow
-        {
-            Owner = this,
-            DataContext = viewModel
-        };
-
-        window.ShowDialog();
-    }
-
     private async void ProjectSettings_Click(
-    object sender,
-    RoutedEventArgs e)
+        object sender,
+        RoutedEventArgs e)
     {
         if (ViewModel.SelectedProject is null)
         {
@@ -154,5 +118,41 @@ public partial class MainWindow : Window
             dialog.DailyTargetMinutes,
             dialog.ReminderBeforeMinutes,
             dialog.NotificationsEnabled);
+    }
+
+    private async void Project_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        if (sender is not ComboBox comboBox ||
+            comboBox.SelectedItem is not Project project)
+        {
+            return;
+        }
+
+        await ViewModel.SwitchProjectAsync(project);
+    }
+
+    private async void History_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var viewModel =
+            ViewModel.CreateHistoryViewModel();
+
+        await viewModel.LoadAsync();
+
+        var window = new HistoryWindow
+        {
+            Owner = this,
+            DataContext = viewModel
+        };
+
+        window.ShowDialog();
     }
 }

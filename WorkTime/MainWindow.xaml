@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="WorkTime"
         Width="760"
-        Height="720"
+        Height="933"
         MinWidth="700"
-        MinHeight="650"
+        MinHeight="780"
         Background="#F8F7F4"
         WindowStartupLocation="CenterScreen"
         FontFamily="Segoe UI"
@@ -581,6 +581,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
 
@@ -649,6 +650,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <ComboBox Grid.Column="0"
@@ -665,13 +667,13 @@
                         Margin="12,0,0,0"
                         Click="NewProject_Click"/>
 
-                <Button Grid.Column="1"
+                <Button Grid.Column="2"
                         Content="⚙"
                         ToolTip="Настройки проекта"
                         Style="{StaticResource AddProjectButton}"
                         FontSize="21"
-                        Margin="12,-119,0,119"
-                        Click="ProjectSettings_Click" RenderTransformOrigin="0.724,0.516"/>
+                        Margin="8,0,0,0"
+                        Click="ProjectSettings_Click"/>
 
             </Grid>
 
@@ -809,7 +811,7 @@
 
 
                     <Button Style="{StaticResource FinishButton}"
-                            IsEnabled="{Binding IsRunning}"
+                            IsEnabled="{Binding CanFinish}"
                             Click="Finish_Click">
 
                         <StackPanel Orientation="Horizontal">
@@ -833,10 +835,96 @@
 
 
         <!-- =========================================================
+             PROJECT FINANCE
+             ========================================================= -->
+
+        <Border Grid.Row="3"
+                Background="White"
+                BorderBrush="#E1DDD5"
+                BorderThickness="1"
+                CornerRadius="17"
+                Padding="20"
+                Margin="0,0,0,16">
+
+            <StackPanel>
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel>
+                        <TextBlock Text="Финансы проекта"
+                                   Foreground="{StaticResource TextBrush}"
+                                   FontSize="18"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="Расчёт по текущей ставке проекта"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   FontSize="12"
+                                   Margin="0,3,0,0"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding ProjectWorkedTimeText}"
+                               Foreground="#B97805"
+                               FontSize="17"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                </Grid>
+
+                <UniformGrid Columns="4">
+                    <Border Background="#EFF8F2" CornerRadius="12" Padding="12" Margin="0,0,6,0">
+                        <StackPanel>
+                            <TextBlock Text="Заработано" Foreground="#718078" FontSize="11"/>
+                            <TextBlock Text="{Binding EarnedAmountText}" Foreground="#16834A"
+                                       FontSize="18" FontWeight="Bold" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#FFF7E8" CornerRadius="12" Padding="12" Margin="2,0,4,0">
+                        <StackPanel>
+                            <TextBlock Text="Договор" Foreground="#8A7755" FontSize="11"/>
+                            <TextBlock Text="{Binding AgreedPriceText}" Foreground="#A66A05"
+                                       FontSize="18" FontWeight="Bold" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#EFF5FC" CornerRadius="12" Padding="12" Margin="4,0,2,0">
+                        <StackPanel>
+                            <TextBlock Text="Осталось" Foreground="#6E7F94" FontSize="11"/>
+                            <TextBlock Text="{Binding RemainingAmountText}" Foreground="#286CC0"
+                                       FontSize="18" FontWeight="Bold" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#F7F1FA" CornerRadius="12" Padding="12" Margin="6,0,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Эфф. ставка" Foreground="#817287" FontSize="11"/>
+                            <TextBlock Text="{Binding EffectiveRateText}" Foreground="#81589B"
+                                       FontSize="18" FontWeight="Bold" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+
+                <Grid Margin="2,13,2,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Прогресс договорной суммы"
+                               Foreground="{StaticResource MutedTextBrush}" FontSize="12"/>
+                    <TextBlock Grid.Column="1" Text="{Binding ProgressText}"
+                               Foreground="#B97805" FontSize="12" FontWeight="SemiBold"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+
+        <!-- =========================================================
              HISTORY
              ========================================================= -->
 
-        <Button Grid.Row="3"
+        <Button Grid.Row="4"
                 Style="{StaticResource HistoryButton}"
                 Click="History_Click">
 
