@@ -6,11 +6,23 @@ namespace WorkTime.Data;
 
 public sealed class WorkTimeDbContext : DbContext
 {
+    public WorkTimeDbContext()
+    {
+    }
+
+    public WorkTimeDbContext(DbContextOptions<WorkTimeDbContext> options)
+        : base(options)
+    {
+    }
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<WorkSession> WorkSessions => Set<WorkSession>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
+        if (optionsBuilder.IsConfigured)
+        {
+            return;
+        }
         var appDataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WorkTime");
         Directory.CreateDirectory(appDataPath);
 
@@ -36,4 +48,5 @@ public sealed class WorkTimeDbContext : DbContext
         });
     }
 }
+
 
