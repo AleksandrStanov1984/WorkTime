@@ -135,6 +135,8 @@ public sealed class TimeAggregationServiceTests
         Assert.Equal(TimeSpan.FromHours(3.5), result);
     }
 
+
+
     private static WorkTimeDbContext CreateDbContext()
     {
         var options =

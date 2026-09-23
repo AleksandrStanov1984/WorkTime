@@ -216,7 +216,7 @@
 
         <!-- Управление таймером -->
         <UniformGrid Grid.Row="3"
-                     Columns="4"
+                     Columns="5"
                      Margin="0,10,0,0">
 
             <Button Content="Start"
@@ -238,6 +238,10 @@
         Style="{StaticResource RoundedButton}"
         IsEnabled="{Binding IsRunning}"
         Click="Finish_Click"/>
+
+            <Button Content="History"
+        Style="{StaticResource RoundedButton}"
+        Click="History_Click"/>
 
         </UniformGrid>
 

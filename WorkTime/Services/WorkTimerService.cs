@@ -9,21 +9,31 @@ public sealed class WorkTimerService
     private readonly WorkTimeDbContext _dbContext;
     private readonly IClock _clock;
 
-    public WorkTimerService(WorkTimeDbContext dbContext, IClock clock)
+    public WorkTimerService(
+        WorkTimeDbContext dbContext,
+        IClock clock)
     {
         _dbContext = dbContext;
         _clock = clock;
     }
 
-    public WorkTimerState State { get; private set; } = WorkTimerState.Stopped;
+    public WorkTimerState State { get; private set; } =
+        WorkTimerState.Stopped;
 
     public int? ActiveProjectId { get; private set; }
 
     public WorkSession? ActiveSession { get; private set; }
 
+    public PauseInterval? ActivePause { get; private set; }
+
     public async Task RestoreAsync()
     {
         var activeSessions = await _dbContext.WorkSessions
+            .Where(x => x.EndedAt == null)
+            .OrderBy(x => x.StartedAt)
+            .ToListAsync();
+
+        var activePauses = await _dbContext.PauseIntervals
             .Where(x => x.EndedAt == null)
             .OrderBy(x => x.StartedAt)
             .ToListAsync();
@@ -34,17 +44,38 @@ public sealed class WorkTimerService
                 "More than one active WorkSession exists.");
         }
 
-        ActiveSession = activeSessions.SingleOrDefault();
-
-        if (ActiveSession is null)
+        if (activePauses.Count > 1)
         {
-            State = WorkTimerState.Stopped;
-            ActiveProjectId = null;
+            throw new InvalidOperationException(
+                "More than one active PauseInterval exists.");
+        }
+
+        if (activeSessions.Count == 1 &&
+            activePauses.Count == 1)
+        {
+            throw new InvalidOperationException(
+                "A work session and pause cannot both be active.");
+        }
+
+        ActiveSession = activeSessions.SingleOrDefault();
+        ActivePause = activePauses.SingleOrDefault();
+
+        if (ActiveSession is not null)
+        {
+            ActiveProjectId = ActiveSession.ProjectId;
+            State = WorkTimerState.Running;
             return;
         }
 
-        ActiveProjectId = ActiveSession.ProjectId;
-        State = WorkTimerState.Running;
+        if (ActivePause is not null)
+        {
+            ActiveProjectId = ActivePause.ProjectId;
+            State = WorkTimerState.Paused;
+            return;
+        }
+
+        ActiveProjectId = null;
+        State = WorkTimerState.Stopped;
     }
 
     public async Task StartAsync(int projectId)
@@ -56,7 +87,7 @@ public sealed class WorkTimerService
         }
 
         await EnsureProjectCanBeUsedAsync(projectId);
-        await EnsureNoActiveSessionExistsAsync();
+        await EnsureNothingActiveAsync();
 
         ActiveSession = new WorkSession
         {
@@ -75,7 +106,18 @@ public sealed class WorkTimerService
     {
         EnsureRunning();
 
-        ActiveSession!.EndedAt = _clock.Now;
+        var pausedAt = _clock.Now;
+
+        ActiveSession!.EndedAt = pausedAt;
+
+        ActivePause = new PauseInterval
+        {
+            ProjectId = ActiveProjectId!.Value,
+            StartedAt = pausedAt
+        };
+
+        _dbContext.PauseIntervals.Add(ActivePause);
+
         await _dbContext.SaveChangesAsync();
 
         ActiveSession = null;
@@ -84,24 +126,32 @@ public sealed class WorkTimerService
 
     public async Task ResumeAsync()
     {
-        if (State != WorkTimerState.Paused || ActiveProjectId is null)
+        if (State != WorkTimerState.Paused ||
+            ActiveProjectId is null ||
+            ActivePause is null)
         {
             throw new InvalidOperationException(
                 "The timer can only be resumed from the Paused state.");
         }
 
-        await EnsureProjectCanBeUsedAsync(ActiveProjectId.Value);
-        await EnsureNoActiveSessionExistsAsync();
+        await EnsureProjectCanBeUsedAsync(
+            ActiveProjectId.Value);
+
+        var resumedAt = _clock.Now;
+
+        ActivePause.EndedAt = resumedAt;
 
         ActiveSession = new WorkSession
         {
             ProjectId = ActiveProjectId.Value,
-            StartedAt = _clock.Now
+            StartedAt = resumedAt
         };
 
         _dbContext.WorkSessions.Add(ActiveSession);
+
         await _dbContext.SaveChangesAsync();
 
+        ActivePause = null;
         State = WorkTimerState.Running;
     }
 
@@ -112,12 +162,26 @@ public sealed class WorkTimerService
             return;
         }
 
+        var finishedAt = _clock.Now;
+
         if (State == WorkTimerState.Running)
         {
-            ActiveSession!.EndedAt = _clock.Now;
-            await _dbContext.SaveChangesAsync();
+            ActiveSession!.EndedAt = finishedAt;
             ActiveSession = null;
         }
+        else if (State == WorkTimerState.Paused)
+        {
+            if (ActivePause is null)
+            {
+                throw new InvalidOperationException(
+                    "Paused state has no active pause.");
+            }
+
+            ActivePause.EndedAt = finishedAt;
+            ActivePause = null;
+        }
+
+        await _dbContext.SaveChangesAsync();
 
         ActiveProjectId = null;
         State = WorkTimerState.Stopped;
@@ -148,6 +212,7 @@ public sealed class WorkTimerService
         };
 
         _dbContext.WorkSessions.Add(newSession);
+
         await _dbContext.SaveChangesAsync();
         await transaction.CommitAsync();
 
@@ -157,17 +222,22 @@ public sealed class WorkTimerService
 
     private void EnsureRunning()
     {
-        if (State != WorkTimerState.Running || ActiveSession is null)
+        if (State != WorkTimerState.Running ||
+            ActiveSession is null ||
+            ActiveProjectId is null)
         {
             throw new InvalidOperationException(
                 "The timer is not currently running.");
         }
     }
 
-    private async Task EnsureProjectCanBeUsedAsync(int projectId)
+    private async Task EnsureProjectCanBeUsedAsync(
+        int projectId)
     {
         var exists = await _dbContext.Projects
-            .AnyAsync(x => x.Id == projectId && !x.IsArchived);
+            .AnyAsync(x =>
+                x.Id == projectId &&
+                !x.IsArchived);
 
         if (!exists)
         {
@@ -176,12 +246,20 @@ public sealed class WorkTimerService
         }
     }
 
-    private async Task EnsureNoActiveSessionExistsAsync()
+    private async Task EnsureNothingActiveAsync()
     {
-        if (await _dbContext.WorkSessions.AnyAsync(x => x.EndedAt == null))
+        var hasWorkSession =
+            await _dbContext.WorkSessions
+                .AnyAsync(x => x.EndedAt == null);
+
+        var hasPause =
+            await _dbContext.PauseIntervals
+                .AnyAsync(x => x.EndedAt == null);
+
+        if (hasWorkSession || hasPause)
         {
             throw new InvalidOperationException(
-                "An active WorkSession already exists.");
+                "An active timer state already exists.");
         }
     }
 }

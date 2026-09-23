@@ -54,15 +54,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
 
             _todayWorkedTime = value;
+
             OnPropertyChanged();
             OnPropertyChanged(nameof(TodayWorkedTimeText));
         }
     }
 
     public string TodayWorkedTimeText =>
-    $"{(int)TodayWorkedTime.TotalHours:00}:{TodayWorkedTime.Minutes:00}:{TodayWorkedTime.Seconds:00}";
+        $"{(int)TodayWorkedTime.TotalHours:00}:" +
+        $"{TodayWorkedTime.Minutes:00}:" +
+        $"{TodayWorkedTime.Seconds:00}";
 
-    public WorkTimerState TimerState => _timerService.State;
+    public WorkTimerState TimerState =>
+        _timerService.State;
 
     public bool IsRunning =>
         TimerState == WorkTimerState.Running;
@@ -70,31 +74,37 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsPaused =>
         TimerState == WorkTimerState.Paused;
 
-    public bool CanFinish =>
-    TimerState == WorkTimerState.Running ||
-    TimerState == WorkTimerState.Paused;
-
     public bool IsStopped =>
         TimerState == WorkTimerState.Stopped;
+
+    public bool CanFinish =>
+        TimerState == WorkTimerState.Running ||
+        TimerState == WorkTimerState.Paused;
 
     public async Task InitializeAsync()
     {
         await _timerService.RestoreAsync();
 
-        Projects = await _projectService.GetActiveProjectsAsync();
+        Projects =
+            await _projectService.GetActiveProjectsAsync();
+
         OnPropertyChanged(nameof(Projects));
 
         if (_timerService.ActiveProjectId is not null)
         {
-            SelectedProject = Projects.FirstOrDefault(
-                x => x.Id == _timerService.ActiveProjectId);
+            SelectedProject =
+                Projects.FirstOrDefault(
+                    x => x.Id ==
+                         _timerService.ActiveProjectId);
         }
         else
         {
-            SelectedProject = Projects.FirstOrDefault();
+            SelectedProject =
+                Projects.FirstOrDefault();
         }
 
         await RefreshTodayAsync();
+
         NotifyTimerStateChanged();
     }
 
@@ -105,9 +115,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        await _timerService.StartAsync(SelectedProject.Id);
+        await _timerService.StartAsync(
+            SelectedProject.Id);
 
         await RefreshTodayAsync();
+
         NotifyTimerStateChanged();
     }
 
@@ -116,6 +128,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await _timerService.PauseAsync();
 
         await RefreshTodayAsync();
+
         NotifyTimerStateChanged();
     }
 
@@ -124,6 +137,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await _timerService.ResumeAsync();
 
         await RefreshTodayAsync();
+
         NotifyTimerStateChanged();
     }
 
@@ -132,45 +146,70 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await _timerService.FinishAsync();
 
         await RefreshTodayAsync();
+
         NotifyTimerStateChanged();
     }
 
-    public async Task SwitchProjectAsync(Project project)
+    public async Task SwitchProjectAsync(
+        Project project)
     {
-        if (!_timerService.State.Equals(WorkTimerState.Running))
+        if (_timerService.State !=
+            WorkTimerState.Running)
         {
             SelectedProject = project;
             return;
         }
 
-        await _timerService.SwitchProjectAsync(project.Id);
+        if (_timerService.ActiveProjectId ==
+            project.Id)
+        {
+            SelectedProject = project;
+            return;
+        }
+
+        await _timerService.SwitchProjectAsync(
+            project.Id);
 
         SelectedProject = project;
 
         await RefreshTodayAsync();
+
         NotifyTimerStateChanged();
     }
 
     public async Task CreateProjectAsync(
-    string name,
-    decimal hourlyRate)
+        string name,
+        decimal hourlyRate)
     {
-        var project = await _projectService.CreateAsync(
-            name,
-            hourlyRate);
+        var project =
+            await _projectService.CreateAsync(
+                name,
+                hourlyRate);
 
-        Projects = await _projectService.GetActiveProjectsAsync();
+        Projects =
+            await _projectService.GetActiveProjectsAsync();
+
         OnPropertyChanged(nameof(Projects));
 
-        SelectedProject = Projects.First(
-            x => x.Id == project.Id);
+        SelectedProject =
+            Projects.First(
+                x => x.Id == project.Id);
     }
 
     public async Task RefreshTodayAsync()
     {
         TodayWorkedTime =
-            await _aggregationService.GetWorkedTimeForDayAsync(
-                DateTime.Today);
+            await _aggregationService
+                .GetWorkedTimeForDayAsync(
+                    DateTime.Today);
+    }
+
+    public HistoryViewModel CreateHistoryViewModel()
+    {
+        return new HistoryViewModel(
+            _aggregationService,
+            Projects,
+            SelectedProject);
     }
 
     private void NotifyTimerStateChanged()
@@ -183,10 +222,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     private void OnPropertyChanged(
-        [CallerMemberName] string? propertyName = null)
+        [CallerMemberName]
+        string? propertyName = null)
     {
         PropertyChanged?.Invoke(
             this,
-            new PropertyChangedEventArgs(propertyName));
+            new PropertyChangedEventArgs(
+                propertyName));
     }
 }

@@ -107,4 +107,22 @@ public partial class MainWindow : Window
 
         await ViewModel.SwitchProjectAsync(project);
     }
+
+    private async void History_Click(
+    object sender,
+    RoutedEventArgs e)
+    {
+        var viewModel =
+            ViewModel.CreateHistoryViewModel();
+
+        await viewModel.LoadAsync();
+
+        var window = new HistoryWindow
+        {
+            Owner = this,
+            DataContext = viewModel
+        };
+
+        window.ShowDialog();
+    }
 }

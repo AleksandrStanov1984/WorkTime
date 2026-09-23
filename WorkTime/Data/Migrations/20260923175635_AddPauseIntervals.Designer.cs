@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using WorkTime.Data;
 
@@ -10,9 +11,11 @@ using WorkTime.Data;
 namespace WorkTime.Data.Migrations
 {
     [DbContext(typeof(WorkTimeDbContext))]
-    partial class WorkTimeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260923175635_AddPauseIntervals")]
+    partial class AddPauseIntervals
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
