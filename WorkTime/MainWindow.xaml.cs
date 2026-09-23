@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     {
         await ViewModel.RefreshTodayAsync();
         await ViewModel.RefreshProjectAnalyticsAsync();
+        await ViewModel.CheckDailyTargetAsync();
     }
 
     private async void Start_Click(

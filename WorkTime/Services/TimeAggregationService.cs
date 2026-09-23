@@ -231,4 +231,23 @@ public sealed class TimeAggregationService
 
         return total;
     }
+
+    public async Task<TimeSpan> GetWorkedTimeForProjectDayAsync(
+    int projectId,
+    DateTime date)
+    {
+        var dayStart = date.Date;
+        var dayEnd = dayStart.AddDays(1);
+
+        var sessions = await GetSessionsAsync(
+            dayStart,
+            dayEnd,
+            projectId);
+
+        return CalculateDuration(
+            sessions.Select(x =>
+                (x.StartedAt, x.EndedAt)),
+            dayStart,
+            dayEnd);
+    }
 }

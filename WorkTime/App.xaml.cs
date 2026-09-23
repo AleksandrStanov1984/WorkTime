@@ -8,6 +8,7 @@ namespace WorkTime;
 public partial class App : Application
 {
     private WorkTimeDbContext? _dbContext;
+    private NotificationService? _notificationService;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -37,11 +38,15 @@ public partial class App : Application
                 _dbContext,
                 clock);
 
+        _notificationService =
+            new NotificationService();
+
         var viewModel = new MainViewModel(
             projectService,
             timerService,
             aggregationService,
-            analyticsService);
+            analyticsService,
+            _notificationService);
 
         await viewModel.InitializeAsync();
 

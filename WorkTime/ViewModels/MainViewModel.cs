@@ -11,21 +11,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly WorkTimerService _timerService;
     private readonly TimeAggregationService _aggregationService;
     private readonly ProjectAnalyticsService _analyticsService;
+    private readonly NotificationService _notificationService;
 
     private Project? _selectedProject;
     private TimeSpan _todayWorkedTime;
     private ProjectAnalytics? _projectAnalytics;
 
     public MainViewModel(
-        ProjectService projectService,
-        WorkTimerService timerService,
-        TimeAggregationService aggregationService,
-        ProjectAnalyticsService analyticsService)
+    ProjectService projectService,
+    WorkTimerService timerService,
+    TimeAggregationService aggregationService,
+    ProjectAnalyticsService analyticsService,
+    NotificationService notificationService)
     {
         _projectService = projectService;
         _timerService = timerService;
         _aggregationService = aggregationService;
         _analyticsService = analyticsService;
+        _notificationService = notificationService;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -348,5 +351,68 @@ public sealed class MainViewModel : INotifyPropertyChanged
             this,
             new PropertyChangedEventArgs(
                 propertyName));
+    }
+
+    public async Task CheckDailyTargetAsync()
+    {
+        if (_timerService.State != WorkTimerState.Running ||
+            _timerService.ActiveProjectId is null)
+        {
+            return;
+        }
+
+        var project = Projects.FirstOrDefault(
+            x => x.Id == _timerService.ActiveProjectId.Value);
+
+        if (project is null ||
+            !project.NotificationsEnabled ||
+            project.DailyTargetMinutes is null ||
+            project.DailyTargetMinutes <= 0)
+        {
+            return;
+        }
+
+        var workedTime =
+            await _aggregationService.GetWorkedTimeForProjectDayAsync(
+                project.Id,
+                DateTime.Today);
+
+        var workedMinutes =
+            workedTime.TotalMinutes;
+
+        var targetMinutes =
+            project.DailyTargetMinutes.Value;
+
+        if (workedMinutes >= targetMinutes)
+        {
+            _notificationService.ShowDailyTargetReached(
+                project.Id,
+                project.Name,
+                DateTime.Today,
+                workedTime);
+
+            return;
+        }
+
+        if (project.ReminderBeforeMinutes is null ||
+            project.ReminderBeforeMinutes <= 0)
+        {
+            return;
+        }
+
+        var reminderMinutes =
+            project.ReminderBeforeMinutes.Value;
+
+        if (workedMinutes >=
+            targetMinutes - reminderMinutes)
+        {
+            _notificationService.ShowDailyTargetReminder(
+                project.Id,
+                project.Name,
+                DateTime.Today,
+                reminderMinutes,
+                workedTime,
+                targetMinutes);
+        }
     }
 }

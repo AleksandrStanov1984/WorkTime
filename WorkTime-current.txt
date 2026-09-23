@@ -1,0 +1,4935 @@
+﻿==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\App.xaml ====================
+<Application x:Class="WorkTime.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+
+    </Application.Resources>
+</Application>
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\App.xaml.cs ====================
+using System.Windows;
+using WorkTime.Data;
+using WorkTime.Services;
+using WorkTime.ViewModels;
+
+namespace WorkTime;
+
+public partial class App : Application
+{
+    private WorkTimeDbContext? _dbContext;
+    private NotificationService? _notificationService;
+
+    protected override async void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+
+        _dbContext = new WorkTimeDbContext();
+
+        await _dbContext.Database.EnsureCreatedAsync();
+
+        var clock = new SystemClock();
+
+        var projectService =
+            new ProjectService(_dbContext);
+
+        var timerService =
+            new WorkTimerService(
+                _dbContext,
+                clock);
+
+        var aggregationService =
+            new TimeAggregationService(
+                _dbContext,
+                clock);
+
+        var analyticsService =
+            new ProjectAnalyticsService(
+                _dbContext,
+                clock);
+
+        _notificationService =
+            new NotificationService();
+
+        _notificationService.Initialize();
+
+        var viewModel = new MainViewModel(
+            projectService,
+            timerService,
+            aggregationService,
+            analyticsService,
+            _notificationService);
+
+        await viewModel.InitializeAsync();
+
+        var window = new MainWindow
+        {
+            DataContext = viewModel
+        };
+
+        window.Show();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _notificationService?.Shutdown();
+        _dbContext?.Dispose();
+
+        base.OnExit(e);
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\AssemblyInfo.cs ====================
+using System.Windows;
+
+[assembly: ThemeInfo(
+    ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located
+                                                //(used if a resource is not found in the page,
+                                                // or application resource dictionaries)
+    ResourceDictionaryLocation.SourceAssembly   //where the generic resource dictionary is located
+                                                //(used if a resource is not found in the page,
+                                                // app, or any theme specific resource dictionaries)
+)]
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Data\WorkTimeDbContext.cs ====================
+using System.IO;
+using Microsoft.EntityFrameworkCore;
+using WorkTime.Models;
+
+namespace WorkTime.Data;
+
+public sealed class WorkTimeDbContext : DbContext
+{
+    public WorkTimeDbContext()
+    {
+    }
+
+    public WorkTimeDbContext(
+        DbContextOptions<WorkTimeDbContext> options)
+        : base(options)
+    {
+    }
+
+    public DbSet<Project> Projects => Set<Project>();
+
+    public DbSet<WorkSession> WorkSessions => Set<WorkSession>();
+
+    public DbSet<PauseInterval> PauseIntervals => Set<PauseInterval>();
+
+    protected override void OnConfiguring(
+        DbContextOptionsBuilder optionsBuilder)
+    {
+        if (optionsBuilder.IsConfigured)
+        {
+            return;
+        }
+
+        var appDataPath = Path.Combine(
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData),
+            "WorkTime");
+
+        Directory.CreateDirectory(appDataPath);
+
+        var databasePath =
+            Path.Combine(appDataPath, "worktime.db");
+
+        optionsBuilder.UseSqlite(
+            $"Data Source={databasePath}");
+    }
+
+    protected override void OnModelCreating(
+        ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Project>(entity =>
+        {
+            entity.Property(x => x.Name)
+                .IsRequired()
+                .HasMaxLength(200);
+
+            entity.Property(x => x.HourlyRate)
+                .HasPrecision(10, 2);
+
+            entity.Property(x => x.AgreedPrice)
+                .HasPrecision(12, 2);
+        });
+
+        modelBuilder.Entity<WorkSession>(entity =>
+        {
+            entity.HasOne(x => x.Project)
+                .WithMany(x => x.WorkSessions)
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PauseInterval>(entity =>
+        {
+            entity.HasOne(x => x.Project)
+                .WithMany()
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\HistoryWindow.xaml ====================
+<Window x:Class="WorkTime.HistoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="История"
+        Width="760"
+        Height="832"
+        MinWidth="700"
+        MinHeight="650"
+        Background="#F8F7F4"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="Segoe UI"
+        FontSize="14">
+
+    <Window.Resources>
+
+        <!-- =========================================================
+             COMMON
+             ========================================================= -->
+
+        <SolidColorBrush x:Key="GoldBrush"
+                         Color="#C58A22"/>
+
+        <SolidColorBrush x:Key="GoldDarkBrush"
+                         Color="#9A6510"/>
+
+        <SolidColorBrush x:Key="TextBrush"
+                         Color="#172033"/>
+
+        <SolidColorBrush x:Key="MutedTextBrush"
+                         Color="#7B8495"/>
+
+        <SolidColorBrush x:Key="BorderBrush"
+                         Color="#E1DDD5"/>
+
+
+        <!-- =========================================================
+             PERIOD BUTTON
+             ========================================================= -->
+
+        <Style x:Key="PeriodButton"
+               TargetType="Button">
+
+            <Setter Property="Height"
+                    Value="54"/>
+
+            <Setter Property="Margin"
+                    Value="5"/>
+
+            <Setter Property="FontSize"
+                    Value="15"/>
+
+            <Setter Property="FontWeight"
+                    Value="SemiBold"/>
+
+            <Setter Property="Foreground"
+                    Value="{StaticResource TextBrush}"/>
+
+            <Setter Property="Background"
+                    Value="#FFFFFF"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#DEDAD2"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="14">
+
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="#FFF6E6"/>
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="BorderBrush"
+                                        Value="#D6A44C"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsPressed"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="#F1D39B"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <!-- =========================================================
+             COMBOBOX
+             ========================================================= -->
+
+        <Style x:Key="HistoryComboBoxItem" TargetType="ComboBoxItem">
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Margin" Value="5,3"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="9"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#FFF4DF"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#F3D79E"/>
+                                <Setter Property="Foreground" Value="#744600"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="HistoryComboBox" TargetType="ComboBox">
+            <Setter Property="Height" Value="48"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#DDD8CF"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource HistoryComboBoxItem}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="ClosedBorder"
+                                                Background="#FFFFFF"
+                                                BorderBrush="#DED8CE"
+                                                BorderThickness="1"
+                                                CornerRadius="11">
+                                            <Grid Margin="14,0,12,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="28"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding SelectedItem.Name, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="#172033"
+                                                           FontSize="15"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="⌄"
+                                                           FontSize="18"
+                                                           Foreground="#9A6510"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <Popup x:Name="PART_Popup"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Fade">
+                                <Border Margin="0,7,0,0"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="300"
+                                        Background="#FFFFFF"
+                                        BorderBrush="#E2D8C8"
+                                        BorderThickness="1"
+                                        CornerRadius="13"
+                                        Padding="5">
+                                    <Border.Effect>
+                                        <DropShadowEffect BlurRadius="18"
+                                                          ShadowDepth="4"
+                                                          Opacity="0.18"/>
+                                    </Border.Effect>
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+
+        <!-- =========================================================
+             BEAUTIFUL DATE PICKER + CALENDAR
+             ========================================================= -->
+
+        <Style x:Key="BeautifulCalendarDayButton" TargetType="{x:Type CalendarDayButton}">
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Foreground" Value="#172033"/>
+            <Setter Property="Background" Value="#F7F8FA"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type CalendarDayButton}">
+                        <Border x:Name="DayBorder" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsInactive" Value="True">
+                                <Setter Property="Foreground" Value="#B9BEC7"/>
+                                <Setter TargetName="DayBorder" Property="Background" Value="#FBFBFC"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="DayBorder" Property="Background" Value="#FFF1D7"/>
+                                <Setter Property="Foreground" Value="#9A6510"/>
+                            </Trigger>
+                            <Trigger Property="IsToday" Value="True">
+                                <Setter Property="FontWeight" Value="Bold"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="DayBorder" Property="Background" Value="#C58A22"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                            <Trigger Property="IsBlackedOut" Value="True">
+                                <Setter Property="Opacity" Value="0.30"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BeautifulCalendarButton" TargetType="{x:Type CalendarButton}">
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Height" Value="46"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#172033"/>
+            <Setter Property="Background" Value="#F7F8FA"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type CalendarButton}">
+                        <Border x:Name="MonthBorder" Background="{TemplateBinding Background}" CornerRadius="10" Padding="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="MonthBorder" Property="Background" Value="#FFF1D7"/>
+                                <Setter Property="Foreground" Value="#9A6510"/>
+                            </Trigger>
+                            <Trigger Property="IsInactive" Value="True">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BeautifulCalendar" TargetType="{x:Type Calendar}">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#E3DDD3"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="CalendarDayButtonStyle" Value="{StaticResource BeautifulCalendarDayButton}"/>
+            <Setter Property="CalendarButtonStyle" Value="{StaticResource BeautifulCalendarButton}"/>
+        </Style>
+
+        <Style x:Key="HistoryDatePicker" TargetType="{x:Type DatePicker}">
+            <Setter Property="Height" Value="46"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="Foreground" Value="#172033"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#D9DDE5"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CalendarStyle" Value="{StaticResource BeautifulCalendar}"/>
+        </Style>
+
+
+        <!-- =========================================================
+             SUMMARY VALUE
+             ========================================================= -->
+
+        <Style x:Key="SummaryValue"
+               TargetType="TextBlock">
+
+            <Setter Property="FontSize"
+                    Value="20"/>
+
+            <Setter Property="FontWeight"
+                    Value="SemiBold"/>
+
+            <Setter Property="VerticalAlignment"
+                    Value="Center"/>
+
+            <Setter Property="HorizontalAlignment"
+                    Value="Right"/>
+
+        </Style>
+
+    </Window.Resources>
+
+
+    <!-- =============================================================
+         PAGE
+         ============================================================= -->
+
+    <Grid Margin="34">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+
+        <!-- =========================================================
+             HEADER
+             ========================================================= -->
+
+        <Grid Grid.Row="0"
+              Margin="0,0,0,26">
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Width="56"
+                    Height="56"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Background="#FFF0D7"
+                    CornerRadius="17">
+
+                <TextBlock Text="◷"
+                           Foreground="#A96E0A"
+                           FontSize="32"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+
+            </Border>
+
+            <StackPanel Grid.Column="1"
+                        VerticalAlignment="Center">
+
+                <TextBlock Text="История"
+                           FontSize="32"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource TextBrush}"/>
+
+                <TextBlock Text="Просмотр отработанного времени и суммы"
+                           FontSize="14"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Margin="0,3,0,0"/>
+
+            </StackPanel>
+
+        </Grid>
+
+
+        <!-- =========================================================
+             PROJECT
+             ========================================================= -->
+
+        <StackPanel Grid.Row="1"
+                    Margin="0,0,0,20">
+
+            <TextBlock Text="Объект / Проект"
+                       Foreground="{StaticResource TextBrush}"
+                       FontWeight="SemiBold"
+                       FontSize="15"
+                       Margin="2,0,0,8"/>
+
+            <Border Background="#FFFFFF"
+                    BorderBrush="#DED8CE"
+                    BorderThickness="1"
+                    CornerRadius="13"
+                    Padding="2">
+
+                <ComboBox x:Name="ProjectComboBox"
+                          Style="{StaticResource HistoryComboBox}"
+                          BorderThickness="0"
+                          ItemsSource="{Binding Projects}"
+                          SelectedItem="{Binding SelectedProject}"
+                          DisplayMemberPath="Name"
+                          SelectionChanged="Project_SelectionChanged"/>
+
+            </Border>
+
+        </StackPanel>
+
+
+        <!-- =========================================================
+             PERIOD
+             ========================================================= -->
+
+        <UniformGrid Grid.Row="2"
+                     Columns="3"
+                     Margin="-5,0,-5,20">
+
+            <Button Style="{StaticResource PeriodButton}"
+                    Click="Day_Click">
+
+                <StackPanel Orientation="Horizontal">
+
+                    <TextBlock Text="▣"
+                               FontSize="19"
+                               Foreground="#B77A13"
+                               Margin="0,0,9,0"/>
+
+                    <TextBlock Text="День"
+                               VerticalAlignment="Center"/>
+
+                </StackPanel>
+
+            </Button>
+
+            <Button Style="{StaticResource PeriodButton}"
+                    Click="Week_Click">
+
+                <StackPanel Orientation="Horizontal">
+
+                    <TextBlock Text="▦"
+                               FontSize="19"
+                               Foreground="#667085"
+                               Margin="0,0,9,0"/>
+
+                    <TextBlock Text="Неделя"
+                               VerticalAlignment="Center"/>
+
+                </StackPanel>
+
+            </Button>
+
+            <Button Style="{StaticResource PeriodButton}"
+                    Click="Month_Click">
+
+                <StackPanel Orientation="Horizontal">
+
+                    <TextBlock Text="▥"
+                               FontSize="19"
+                               Foreground="#667085"
+                               Margin="0,0,9,0"/>
+
+                    <TextBlock Text="Месяц"
+                               VerticalAlignment="Center"/>
+
+                </StackPanel>
+
+            </Button>
+
+        </UniformGrid>
+
+
+        <!-- =========================================================
+             DATE
+             ========================================================= -->
+
+        <Grid Grid.Row="3"
+              Margin="0,0,0,22">
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="110"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+
+                <TextBlock Text="▣"
+                           Foreground="#BE7C0B"
+                           FontSize="21"
+                           Margin="0,0,10,0"/>
+
+                <TextBlock Text="Дата"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+
+            </StackPanel>
+
+            <Border Grid.Column="1"
+                    Background="White"
+                    BorderBrush="#D9DDE5"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="3">
+
+                <DatePicker x:Name="HistoryDatePicker"
+                            Style="{StaticResource HistoryDatePicker}"
+                            BorderThickness="0"
+                            SelectedDate="{Binding SelectedDate}"
+                            SelectedDateChanged="DatePicker_SelectedDateChanged"/>
+
+            </Border>
+
+        </Grid>
+
+
+        <!-- =========================================================
+             PERIOD TITLE
+             ========================================================= -->
+
+        <TextBlock Grid.Row="4"
+                   Text="{Binding PeriodText}"
+                   Foreground="{StaticResource TextBrush}"
+                   HorizontalAlignment="Center"
+                   FontSize="21"
+                   FontWeight="Bold"
+                   Margin="0,0,0,18"/>
+
+
+        <!-- =========================================================
+             SUMMARY CARD
+             ========================================================= -->
+
+        <Border Grid.Row="5"
+                Background="White"
+                BorderBrush="#E1DDD5"
+                BorderThickness="1"
+                CornerRadius="20"
+                Padding="24">
+
+            <Grid>
+
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="1"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+
+                <!-- WORKED -->
+
+                <Grid Grid.Row="0"
+                      Margin="0,0,0,14">
+
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="210"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Width="44"
+                            Height="44"
+                            Background="#E2F8EB"
+                            CornerRadius="13"
+                            HorizontalAlignment="Left">
+
+                        <TextBlock Text="◷"
+                                   FontSize="24"
+                                   Foreground="#079447"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+
+                    </Border>
+
+                    <StackPanel Grid.Column="1"
+                                VerticalAlignment="Center">
+
+                        <TextBlock Text="Отработано"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}"/>
+
+                        <TextBlock Text="Активное время"
+                                   FontSize="12"
+                                   Foreground="{StaticResource MutedTextBrush}"/>
+
+                    </StackPanel>
+
+                    <Border Grid.Column="2"
+                            Background="#E4F9EC"
+                            CornerRadius="13"
+                            Padding="16,10">
+
+                        <TextBlock Text="{Binding WorkedTimeText}"
+                                   Style="{StaticResource SummaryValue}"
+                                   Foreground="#078C43"/>
+
+                    </Border>
+
+                </Grid>
+
+
+                <!-- PAUSE -->
+
+                <Grid Grid.Row="1"
+                      Margin="0,0,0,14">
+
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="210"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Width="44"
+                            Height="44"
+                            Background="#F8F0E3"
+                            CornerRadius="13"
+                            HorizontalAlignment="Left">
+
+                        <TextBlock Text="Ⅱ"
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   Foreground="#A56D17"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+
+                    </Border>
+
+                    <StackPanel Grid.Column="1"
+                                VerticalAlignment="Center">
+
+                        <TextBlock Text="Пауза"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}"/>
+
+                        <TextBlock Text="Время на паузе"
+                                   FontSize="12"
+                                   Foreground="{StaticResource MutedTextBrush}"/>
+
+                    </StackPanel>
+
+                    <Border Grid.Column="2"
+                            Background="#FBF2E4"
+                            CornerRadius="13"
+                            Padding="16,10">
+
+                        <TextBlock Text="{Binding PauseTimeText}"
+                                   Style="{StaticResource SummaryValue}"
+                                   Foreground="#966118"/>
+
+                    </Border>
+
+                </Grid>
+
+
+                <!-- RATE -->
+
+                <Grid Grid.Row="2"
+                      Margin="0,0,0,20">
+
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="210"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Width="44"
+                            Height="44"
+                            Background="#E6F1FF"
+                            CornerRadius="13"
+                            HorizontalAlignment="Left">
+
+                        <TextBlock Text="€"
+                                   FontSize="22"
+                                   FontWeight="Bold"
+                                   Foreground="#1769D2"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+
+                    </Border>
+
+                    <StackPanel Grid.Column="1"
+                                VerticalAlignment="Center">
+
+                        <TextBlock Text="Ставка"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}"/>
+
+                        <TextBlock Text="Почасовая ставка"
+                                   FontSize="12"
+                                   Foreground="{StaticResource MutedTextBrush}"/>
+
+                    </StackPanel>
+
+                    <Border Grid.Column="2"
+                            Background="#E6F1FF"
+                            CornerRadius="13"
+                            Padding="16,10">
+
+                        <TextBlock Text="{Binding HourlyRateText}"
+                                   Style="{StaticResource SummaryValue}"
+                                   Foreground="#1769D2"/>
+
+                    </Border>
+
+                </Grid>
+
+
+                <!-- SEPARATOR -->
+
+                <Border Grid.Row="3"
+                        Background="#EEEAE3"/>
+
+
+                <!-- TOTAL -->
+
+                <Grid Grid.Row="4"
+                      Margin="0,20,0,0">
+
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="210"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Width="44"
+                            Height="44"
+                            Background="#FFF0C9"
+                            CornerRadius="13"
+                            HorizontalAlignment="Left">
+
+                        <TextBlock Text="€"
+                                   FontSize="22"
+                                   FontWeight="Bold"
+                                   Foreground="#B97805"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+
+                    </Border>
+
+                    <StackPanel Grid.Column="1"
+                                VerticalAlignment="Center">
+
+                        <TextBlock Text="Сумма"
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource TextBrush}"/>
+
+                        <TextBlock Text="Заработано за период"
+                                   FontSize="12"
+                                   Foreground="{StaticResource MutedTextBrush}"/>
+
+                    </StackPanel>
+
+                    <Border Grid.Column="2"
+                            Background="#FFF1C9"
+                            BorderBrush="#E6AE37"
+                            BorderThickness="1"
+                            CornerRadius="14"
+                            Padding="16,12">
+
+                        <TextBlock Text="{Binding AmountText}"
+                                   FontSize="25"
+                                   FontWeight="Bold"
+                                   Foreground="#704000"
+                                   HorizontalAlignment="Right"/>
+
+                    </Border>
+
+                </Grid>
+
+            </Grid>
+
+        </Border>
+
+    </Grid>
+
+</Window>
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\HistoryWindow.xaml.cs ====================
+using System.Windows;
+using System.Windows.Controls;
+using WorkTime.ViewModels;
+
+namespace WorkTime;
+
+public partial class HistoryWindow : Window
+{
+    public HistoryWindow()
+    {
+        InitializeComponent();
+    }
+
+    private HistoryViewModel ViewModel =>
+        (HistoryViewModel)DataContext;
+
+    private async void Project_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        await ViewModel.RefreshAsync();
+    }
+
+    private async void DatePicker_SelectedDateChanged(
+        object? sender,
+        SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        await ViewModel.RefreshAsync();
+    }
+
+    private async void Day_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await ViewModel.SetDayAsync();
+    }
+
+    private async void Week_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await ViewModel.SetWeekAsync();
+    }
+
+    private async void Month_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await ViewModel.SetMonthAsync();
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\MainWindow.xaml ====================
+<Window x:Class="WorkTime.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WorkTime"
+        Width="760"
+        Height="933"
+        MinWidth="700"
+        MinHeight="780"
+        Background="#F8F7F4"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI"
+        FontSize="14">
+
+    <Window.Resources>
+
+        <!-- =========================================================
+             COLORS
+             ========================================================= -->
+
+        <SolidColorBrush x:Key="TextBrush"
+                         Color="#0D1B36"/>
+
+        <SolidColorBrush x:Key="MutedTextBrush"
+                         Color="#78859D"/>
+
+        <SolidColorBrush x:Key="GoldBrush"
+                         Color="#C58A22"/>
+
+        <SolidColorBrush x:Key="BorderBrush"
+                         Color="#E2DDD4"/>
+
+
+        <!-- =========================================================
+             PROJECT COMBOBOX ITEM
+             ========================================================= -->
+
+        <Style x:Key="ProjectComboBoxItem"
+               TargetType="ComboBoxItem">
+
+            <Setter Property="Padding"
+                    Value="14,11"/>
+
+            <Setter Property="Margin"
+                    Value="5,3"/>
+
+            <Setter Property="Foreground"
+                    Value="{StaticResource TextBrush}"/>
+
+            <Setter Property="Background"
+                    Value="Transparent"/>
+
+            <Setter Property="HorizontalContentAlignment"
+                    Value="Stretch"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="ComboBoxItem">
+
+                        <Border x:Name="ItemBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}">
+
+                            <ContentPresenter/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsHighlighted"
+                                     Value="True">
+
+                                <Setter TargetName="ItemBorder"
+                                        Property="Background"
+                                        Value="#FFF4DF"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsSelected"
+                                     Value="True">
+
+                                <Setter TargetName="ItemBorder"
+                                        Property="Background"
+                                        Value="#F3D79E"/>
+
+                                <Setter Property="Foreground"
+                                        Value="#744600"/>
+
+                                <Setter Property="FontWeight"
+                                        Value="SemiBold"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <!-- =========================================================
+             PROJECT COMBOBOX
+             ========================================================= -->
+
+        <Style x:Key="ProjectComboBox"
+               TargetType="ComboBox">
+
+            <Setter Property="Height"
+                    Value="58"/>
+
+            <Setter Property="FontSize"
+                    Value="17"/>
+
+            <Setter Property="Foreground"
+                    Value="{StaticResource TextBrush}"/>
+
+            <Setter Property="Background"
+                    Value="White"/>
+
+            <Setter Property="BorderThickness"
+                    Value="0"/>
+
+            <Setter Property="ItemContainerStyle"
+                    Value="{StaticResource ProjectComboBoxItem}"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="ComboBox">
+
+                        <Grid>
+
+                            <ToggleButton x:Name="ToggleButton"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen,
+                                              RelativeSource={RelativeSource TemplatedParent},
+                                              Mode=TwoWay}">
+
+                                <ToggleButton.Template>
+
+                                    <ControlTemplate TargetType="ToggleButton">
+
+                                        <Border x:Name="ClosedBorder"
+                                                Background="White"
+                                                BorderBrush="#DDD7CC"
+                                                BorderThickness="1"
+                                                CornerRadius="14">
+
+                                            <Grid Margin="17,0,14,0">
+
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <Border Grid.Column="0"
+                                                        Width="30"
+                                                        Height="30"
+                                                        Background="#FFF2D8"
+                                                        CornerRadius="8"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Center">
+
+                                                    <TextBlock Text="▣"
+                                                               Foreground="#B97805"
+                                                               FontSize="17"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+
+                                                </Border>
+
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding SelectedItem.Name,
+                                                               RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="#0D1B36"
+                                                           FontSize="17"
+                                                           FontWeight="SemiBold"/>
+
+                                                <TextBlock Grid.Column="2"
+                                                           Text="⌄"
+                                                           Foreground="#B97805"
+                                                           FontSize="20"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"/>
+
+                                            </Grid>
+
+                                        </Border>
+
+                                        <ControlTemplate.Triggers>
+
+                                            <Trigger Property="IsMouseOver"
+                                                     Value="True">
+
+                                                <Setter TargetName="ClosedBorder"
+                                                        Property="BorderBrush"
+                                                        Value="#D2A34F"/>
+
+                                                <Setter TargetName="ClosedBorder"
+                                                        Property="Background"
+                                                        Value="#FFFCF7"/>
+
+                                            </Trigger>
+
+                                        </ControlTemplate.Triggers>
+
+                                    </ControlTemplate>
+
+                                </ToggleButton.Template>
+
+                            </ToggleButton>
+
+                            <Popup x:Name="PART_Popup"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Fade">
+
+                                <Border Margin="0,7,0,0"
+                                        MinWidth="{Binding ActualWidth,
+                                            RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="300"
+                                        Background="White"
+                                        BorderBrush="#E2D8C8"
+                                        BorderThickness="1"
+                                        CornerRadius="14"
+                                        Padding="5">
+
+                                    <Border.Effect>
+
+                                        <DropShadowEffect BlurRadius="18"
+                                                          ShadowDepth="4"
+                                                          Opacity="0.18"/>
+
+                                    </Border.Effect>
+
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+
+                                        <ItemsPresenter/>
+
+                                    </ScrollViewer>
+
+                                </Border>
+
+                            </Popup>
+
+                        </Grid>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <!-- =========================================================
+             ADD PROJECT BUTTON
+             ========================================================= -->
+
+        <Style x:Key="AddProjectButton"
+               TargetType="Button">
+
+            <Setter Property="Width"
+                    Value="58"/>
+
+            <Setter Property="Height"
+                    Value="58"/>
+
+            <Setter Property="Background"
+                    Value="White"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#DDD7CC"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+            <Setter Property="Foreground"
+                    Value="#B97805"/>
+
+            <Setter Property="FontSize"
+                    Value="30"/>
+
+            <Setter Property="FontWeight"
+                    Value="Light"/>
+
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="15">
+
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="#FFF4DF"/>
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="BorderBrush"
+                                        Value="#D2A34F"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsPressed"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="#F3D79E"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <!-- =========================================================
+             TIMER ACTION BUTTON BASE
+             ========================================================= -->
+
+        <Style x:Key="TimerButton"
+               TargetType="Button">
+
+            <Setter Property="Height"
+                    Value="76"/>
+
+            <Setter Property="Margin"
+                    Value="5"/>
+
+            <Setter Property="FontSize"
+                    Value="16"/>
+
+            <Setter Property="FontWeight"
+                    Value="SemiBold"/>
+
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="15">
+
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Opacity"
+                                        Value="0.82"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsPressed"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Opacity"
+                                        Value="0.65"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsEnabled"
+                                     Value="False">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="#F7F7F7"/>
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="BorderBrush"
+                                        Value="#E2E2E2"/>
+
+                                <Setter Property="Foreground"
+                                        Value="#A4ACB8"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <Style x:Key="StartButton"
+               TargetType="Button"
+               BasedOn="{StaticResource TimerButton}">
+
+            <Setter Property="Background"
+                    Value="#F5F7F9"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#DFE3E8"/>
+
+            <Setter Property="Foreground"
+                    Value="#65758A"/>
+
+        </Style>
+
+
+        <Style x:Key="PauseButton"
+               TargetType="Button"
+               BasedOn="{StaticResource TimerButton}">
+
+            <Setter Property="Background"
+                    Value="#FFF5E5"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#F0D39B"/>
+
+            <Setter Property="Foreground"
+                    Value="#A86B08"/>
+
+        </Style>
+
+
+        <Style x:Key="ResumeButton"
+               TargetType="Button"
+               BasedOn="{StaticResource TimerButton}">
+
+            <Setter Property="Background"
+                    Value="#EFF6FF"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#D7E5F8"/>
+
+            <Setter Property="Foreground"
+                    Value="#286CC0"/>
+
+        </Style>
+
+
+        <Style x:Key="FinishButton"
+               TargetType="Button"
+               BasedOn="{StaticResource TimerButton}">
+
+            <Setter Property="Background"
+                    Value="#FFF0F0"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#F2CACA"/>
+
+            <Setter Property="Foreground"
+                    Value="#C52020"/>
+
+        </Style>
+
+
+        <!-- =========================================================
+             HISTORY BUTTON
+             ========================================================= -->
+
+        <Style x:Key="HistoryButton"
+               TargetType="Button">
+
+            <Setter Property="Height"
+                    Value="84"/>
+
+            <Setter Property="Background"
+                    Value="White"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#E1DDD5"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="HistoryBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="17">
+
+                            <ContentPresenter/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="HistoryBorder"
+                                        Property="Background"
+                                        Value="#FFFCF7"/>
+
+                                <Setter TargetName="HistoryBorder"
+                                        Property="BorderBrush"
+                                        Value="#D8B46D"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsPressed"
+                                     Value="True">
+
+                                <Setter TargetName="HistoryBorder"
+                                        Property="Background"
+                                        Value="#FFF4DF"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+    </Window.Resources>
+
+
+    <!-- =============================================================
+         PAGE
+         ============================================================= -->
+
+    <Grid Margin="34">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+
+        <!-- =========================================================
+             HEADER
+             ========================================================= -->
+
+        <Grid Grid.Row="0"
+              Margin="0,0,0,25">
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Width="56"
+                    Height="56"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Background="#FFF0D7"
+                    CornerRadius="17">
+
+                <TextBlock Text="◷"
+                           Foreground="#B97805"
+                           FontSize="32"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+
+            </Border>
+
+            <StackPanel Grid.Column="1"
+                        VerticalAlignment="Center">
+
+                <TextBlock Text="WorkTime"
+                           FontSize="32"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource TextBrush}"/>
+
+                <TextBlock Text="Учёт рабочего времени"
+                           FontSize="14"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Margin="0,3,0,0"/>
+
+            </StackPanel>
+
+        </Grid>
+
+
+        <!-- =========================================================
+             PROJECT
+             ========================================================= -->
+
+        <StackPanel Grid.Row="1"
+                    Margin="0,0,0,22">
+
+            <TextBlock Text="Проект"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource TextBrush}"
+                       Margin="2,0,0,8"/>
+
+            <Grid>
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <ComboBox Grid.Column="0"
+                          Style="{StaticResource ProjectComboBox}"
+                          ItemsSource="{Binding Projects}"
+                          SelectedItem="{Binding SelectedProject}"
+                          DisplayMemberPath="Name"
+                          SelectionChanged="Project_SelectionChanged"/>
+
+                <Button Grid.Column="1"
+                        Content="+"
+                        ToolTip="Добавить проект"
+                        Style="{StaticResource AddProjectButton}"
+                        Margin="12,0,0,0"
+                        Click="NewProject_Click"/>
+
+                <Button Grid.Column="2"
+                        Content="⚙"
+                        ToolTip="Настройки проекта"
+                        Style="{StaticResource AddProjectButton}"
+                        FontSize="21"
+                        Margin="8,0,0,0"
+                        Click="ProjectSettings_Click"/>
+
+            </Grid>
+
+        </StackPanel>
+
+
+        <!-- =========================================================
+             TIMER CARD
+             ========================================================= -->
+
+        <Border Grid.Row="2"
+                Background="White"
+                BorderBrush="#E1DDD5"
+                BorderThickness="1"
+                CornerRadius="20"
+                Padding="24"
+                Margin="0,0,0,20">
+
+            <Grid>
+
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+
+                <!-- TODAY -->
+
+                <TextBlock Grid.Row="0"
+                           Text="Сегодня"
+                           HorizontalAlignment="Center"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           FontSize="17"
+                           FontWeight="SemiBold"/>
+
+
+                <!-- TIMER + STATUS -->
+
+                <StackPanel Grid.Row="1"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+
+                    <TextBlock Text="{Binding TodayWorkedTimeText}"
+                               HorizontalAlignment="Center"
+                               Foreground="{StaticResource TextBrush}"
+                               FontSize="58"
+                               FontWeight="Bold"/>
+
+                    <Border Background="#E2F8EB"
+                            CornerRadius="18"
+                            Padding="18,8"
+                            HorizontalAlignment="Center"
+                            Margin="0,10,0,0">
+
+                        <StackPanel Orientation="Horizontal">
+
+                            <Ellipse Width="10"
+                                     Height="10"
+                                     Fill="#10A94F"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,9,0"/>
+
+                            <TextBlock Text="{Binding TimerState}"
+                                       Foreground="#079447"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"/>
+
+                        </StackPanel>
+
+                    </Border>
+
+                </StackPanel>
+
+
+                <!-- ACTIONS -->
+
+                <UniformGrid Grid.Row="2"
+                             Columns="4"
+                             Margin="-5,18,-5,0">
+
+                    <Button Style="{StaticResource StartButton}"
+                            IsEnabled="{Binding IsStopped}"
+                            Click="Start_Click">
+
+                        <StackPanel Orientation="Horizontal">
+
+                            <TextBlock Text="▶"
+                                       FontSize="18"
+                                       Margin="0,0,9,0"/>
+
+                            <TextBlock Text="Start"
+                                       VerticalAlignment="Center"/>
+
+                        </StackPanel>
+
+                    </Button>
+
+
+                    <Button Style="{StaticResource PauseButton}"
+                            IsEnabled="{Binding IsRunning}"
+                            Click="Pause_Click">
+
+                        <StackPanel Orientation="Horizontal">
+
+                            <TextBlock Text="Ⅱ"
+                                       FontSize="19"
+                                       FontWeight="Bold"
+                                       Margin="0,0,9,0"/>
+
+                            <TextBlock Text="Pause"
+                                       VerticalAlignment="Center"/>
+
+                        </StackPanel>
+
+                    </Button>
+
+
+                    <Button Style="{StaticResource ResumeButton}"
+                            IsEnabled="{Binding IsPaused}"
+                            Click="Resume_Click">
+
+                        <StackPanel Orientation="Horizontal">
+
+                            <TextBlock Text="▶"
+                                       FontSize="18"
+                                       Margin="0,0,9,0"/>
+
+                            <TextBlock Text="Resume"
+                                       VerticalAlignment="Center"/>
+
+                        </StackPanel>
+
+                    </Button>
+
+
+                    <Button Style="{StaticResource FinishButton}"
+                            IsEnabled="{Binding CanFinish}"
+                            Click="Finish_Click">
+
+                        <StackPanel Orientation="Horizontal">
+
+                            <TextBlock Text="■"
+                                       FontSize="16"
+                                       Margin="0,0,9,0"/>
+
+                            <TextBlock Text="Finish"
+                                       VerticalAlignment="Center"/>
+
+                        </StackPanel>
+
+                    </Button>
+
+                </UniformGrid>
+
+            </Grid>
+
+        </Border>
+
+
+        <!-- =========================================================
+             PROJECT FINANCE
+             ========================================================= -->
+
+        <Border Grid.Row="3"
+                Background="White"
+                BorderBrush="#E1DDD5"
+                BorderThickness="1"
+                CornerRadius="17"
+                Padding="20"
+                Margin="0,0,0,16">
+
+            <StackPanel>
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel>
+                        <TextBlock Text="Финансы проекта"
+                                   Foreground="{StaticResource TextBrush}"
+                                   FontSize="18"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="Расчёт по текущей ставке проекта"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   FontSize="12"
+                                   Margin="0,3,0,0"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding ProjectWorkedTimeText}"
+                               Foreground="#B97805"
+                               FontSize="17"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                </Grid>
+
+                <UniformGrid Columns="5">
+                    <Border Background="#EFF8F2" CornerRadius="12" Padding="12" Margin="0,0,6,0">
+                        <StackPanel>
+                            <TextBlock Text="Заработано" Foreground="#718078" FontSize="11"/>
+                            <TextBlock Text="{Binding EarnedAmountText}" Foreground="#16834A"
+                                       FontSize="18" FontWeight="Bold" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#F3F5F8"
+        CornerRadius="12"
+        Padding="12"
+        Margin="2,0,4,0">
+
+                        <StackPanel>
+
+                            <TextBlock Text="Ставка"
+                   Foreground="#718078"
+                   FontSize="11"/>
+
+                            <TextBlock Text="{Binding HourlyRateText}"
+                   Foreground="#495A70"
+                   FontSize="18"
+                   FontWeight="Bold"
+                   Margin="0,4,0,0"/>
+
+                        </StackPanel>
+
+                    </Border>
+
+                    <Border Background="#FFF7E8" CornerRadius="12" Padding="12" Margin="2,0,4,0">
+                        <StackPanel>
+                            <TextBlock Text="Договор" Foreground="#8A7755" FontSize="11"/>
+                            <TextBlock Text="{Binding AgreedPriceText}" Foreground="#A66A05"
+                                       FontSize="18" FontWeight="Bold" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#EFF5FC" CornerRadius="12" Padding="12" Margin="4,0,2,0">
+                        <StackPanel>
+                            <TextBlock Text="Осталось" Foreground="#6E7F94" FontSize="11"/>
+                            <TextBlock Text="{Binding RemainingAmountText}" Foreground="#286CC0"
+                                       FontSize="18" FontWeight="Bold" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#F7F1FA" CornerRadius="12" Padding="12" Margin="6,0,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Эфф. ставка" Foreground="#817287" FontSize="11"/>
+                            <TextBlock Text="{Binding EffectiveRateText}" Foreground="#81589B"
+                                       FontSize="18" FontWeight="Bold" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+
+                <Grid Margin="2,13,2,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Прогресс договорной суммы"
+                               Foreground="{StaticResource MutedTextBrush}" FontSize="12"/>
+                    <TextBlock Grid.Column="1" Text="{Binding ProgressText}"
+                               Foreground="#B97805" FontSize="12" FontWeight="SemiBold"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+
+        <!-- =========================================================
+             HISTORY
+             ========================================================= -->
+
+        <Button Grid.Row="4"
+                Style="{StaticResource HistoryButton}"
+                Click="History_Click">
+
+            <Grid Margin="18,0">
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="58"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="40"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0"
+                        Width="44"
+                        Height="44"
+                        Background="#FFF0D7"
+                        CornerRadius="13"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center">
+
+                    <TextBlock Text="◷"
+                               Foreground="#B97805"
+                               FontSize="25"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+
+                </Border>
+
+                <StackPanel Grid.Column="1"
+                            VerticalAlignment="Center">
+
+                    <TextBlock Text="История"
+                               Foreground="{StaticResource TextBrush}"
+                               FontSize="18"
+                               FontWeight="Bold"/>
+
+                    <TextBlock Text="Просмотр отработанного времени и суммы"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               FontSize="12"
+                               Margin="0,3,0,0"/>
+
+                </StackPanel>
+
+                <TextBlock Grid.Column="2"
+                           Text="›"
+                           Foreground="#B97805"
+                           FontSize="34"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+
+            </Grid>
+
+        </Button>
+
+    </Grid>
+
+</Window>
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\MainWindow.xaml.cs ====================
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
+using WorkTime.Models;
+using WorkTime.ViewModels;
+
+namespace WorkTime;
+
+public partial class MainWindow : Window
+{
+    private readonly DispatcherTimer _displayTimer;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        _displayTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+
+        _displayTimer.Tick += DisplayTimer_Tick;
+
+        Loaded += (_, _) =>
+        {
+            _displayTimer.Start();
+        };
+
+        Closed += (_, _) =>
+        {
+            _displayTimer.Stop();
+        };
+    }
+
+    private MainViewModel ViewModel =>
+        (MainViewModel)DataContext;
+
+    private async void DisplayTimer_Tick(
+        object? sender,
+        EventArgs e)
+    {
+        await ViewModel.RefreshTodayAsync();
+        await ViewModel.RefreshProjectAnalyticsAsync();
+        await ViewModel.CheckDailyTargetAsync();
+    }
+
+    private async void Start_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await ViewModel.StartAsync();
+    }
+
+    private async void Pause_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await ViewModel.PauseAsync();
+    }
+
+    private async void Resume_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await ViewModel.ResumeAsync();
+    }
+
+    private async void Finish_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        await ViewModel.FinishAsync();
+    }
+
+    private async void NewProject_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var dialog = new NewProjectWindow
+        {
+            Owner = this
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        await ViewModel.CreateProjectAsync(
+            dialog.ProjectName,
+            dialog.HourlyRate);
+    }
+
+    private async void ProjectSettings_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedProject is null)
+        {
+            return;
+        }
+
+        var dialog =
+            new ProjectSettingsWindow(
+                ViewModel.SelectedProject)
+            {
+                Owner = this
+            };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        await ViewModel.UpdateSelectedProjectAsync(
+            dialog.ProjectName,
+            dialog.HourlyRate,
+            dialog.AgreedPrice,
+            dialog.DailyTargetMinutes,
+            dialog.ReminderBeforeMinutes,
+            dialog.NotificationsEnabled);
+    }
+
+    private async void Project_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        if (sender is not ComboBox comboBox ||
+            comboBox.SelectedItem is not Project project)
+        {
+            return;
+        }
+
+        await ViewModel.SwitchProjectAsync(project);
+    }
+
+    private async void History_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var viewModel =
+            ViewModel.CreateHistoryViewModel();
+
+        await viewModel.LoadAsync();
+
+        var window = new HistoryWindow
+        {
+            Owner = this,
+            DataContext = viewModel
+        };
+
+        window.ShowDialog();
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Models\DailyWorkSummary.cs ====================
+namespace WorkTime.Models;
+
+public sealed class DailyWorkSummary
+{
+    public DateTime Date { get; init; }
+
+    public TimeSpan WorkedTime { get; init; }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Models\HistoryPeriod.cs ====================
+namespace WorkTime.Models;
+
+public enum HistoryPeriod
+{
+    Day,
+    Week,
+    Month
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Models\HistorySummary.cs ====================
+namespace WorkTime.Models;
+
+public sealed class HistorySummary
+{
+    public TimeSpan WorkedTime { get; init; }
+
+    public TimeSpan PauseTime { get; init; }
+
+    public decimal HourlyRate { get; init; }
+
+    public decimal Amount { get; init; }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Models\PauseInterval.cs ====================
+namespace WorkTime.Models;
+
+public sealed class PauseInterval
+{
+    public long Id { get; set; }
+
+    public int ProjectId { get; set; }
+
+    public DateTime StartedAt { get; set; }
+
+    public DateTime? EndedAt { get; set; }
+
+    public Project Project { get; set; } = null!;
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Models\Project.cs ====================
+namespace WorkTime.Models;
+
+public sealed class Project
+{
+    public int Id { get; set; }
+    public required string Name { get; set; }
+    public decimal HourlyRate { get; set; }
+    public decimal? AgreedPrice { get; set; }
+    public int? DailyTargetMinutes { get; set; }
+    public int? ReminderBeforeMinutes { get; set; }
+    public bool NotificationsEnabled { get; set; } = true;
+    public bool IsArchived { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+    public ICollection<WorkSession> WorkSessions { get; set; } = [];
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Models\ProjectAnalytics.cs ====================
+namespace WorkTime.Models;
+
+public sealed class ProjectAnalytics
+{
+    public TimeSpan WorkedTime { get; init; }
+
+    public decimal HourlyRate { get; init; }
+
+    public decimal EarnedAmount { get; init; }
+
+    public decimal? AgreedPrice { get; init; }
+
+    public decimal? RemainingAmount { get; init; }
+
+    public decimal? ProgressPercent { get; init; }
+
+    public decimal? EffectiveHourlyRate { get; init; }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Models\WorkSession.cs ====================
+namespace WorkTime.Models;
+
+public sealed class WorkSession
+{
+    public long Id { get; set; }
+    public int ProjectId { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime? EndedAt { get; set; }
+
+    public Project Project { get; set; } = null!;
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Models\WorkTimerState.cs ====================
+namespace WorkTime.Models;
+
+public enum WorkTimerState
+{
+    Stopped,
+    Running,
+    Paused
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\NewProjectWindow.xaml ====================
+<Window x:Class="WorkTime.NewProjectWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Новый проект"
+        Width="620"
+        Height="480"
+        MinWidth="620"
+        MinHeight="480"
+        MaxWidth="620"
+        MaxHeight="480"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#F8F7F4"
+        FontFamily="Segoe UI"
+        FontSize="14">
+
+    <Window.Resources>
+
+        <!-- =========================================================
+             COLORS
+             ========================================================= -->
+
+        <SolidColorBrush x:Key="TextBrush"
+                         Color="#0D1B36"/>
+
+        <SolidColorBrush x:Key="MutedTextBrush"
+                         Color="#78859D"/>
+
+        <SolidColorBrush x:Key="GoldBrush"
+                         Color="#C58A22"/>
+
+
+        <!-- =========================================================
+             TEXT BOX
+             ========================================================= -->
+
+        <Style x:Key="ProjectTextBox"
+               TargetType="TextBox">
+
+            <Setter Property="Height"
+                    Value="56"/>
+
+            <Setter Property="Padding"
+                    Value="16,0"/>
+
+            <Setter Property="FontSize"
+                    Value="16"/>
+
+            <Setter Property="Foreground"
+                    Value="{StaticResource TextBrush}"/>
+
+            <Setter Property="Background"
+                    Value="White"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#DDD7CC"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+            <Setter Property="VerticalContentAlignment"
+                    Value="Center"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="TextBox">
+
+                        <Border x:Name="TextBoxBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12">
+
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsKeyboardFocused"
+                                     Value="True">
+
+                                <Setter TargetName="TextBoxBorder"
+                                        Property="BorderBrush"
+                                        Value="#C58A22"/>
+
+                                <Setter TargetName="TextBoxBorder"
+                                        Property="BorderThickness"
+                                        Value="2"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="TextBoxBorder"
+                                        Property="BorderBrush"
+                                        Value="#D1AA64"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <!-- =========================================================
+             CANCEL BUTTON
+             ========================================================= -->
+
+        <Style x:Key="CancelButton"
+               TargetType="Button">
+
+            <Setter Property="Width"
+                    Value="140"/>
+
+            <Setter Property="Height"
+                    Value="52"/>
+
+            <Setter Property="FontSize"
+                    Value="16"/>
+
+            <Setter Property="FontWeight"
+                    Value="SemiBold"/>
+
+            <Setter Property="Foreground"
+                    Value="#344054"/>
+
+            <Setter Property="Background"
+                    Value="White"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#D8D4CD"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="13">
+
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="#F3F2EF"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsPressed"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="#E9E6E0"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <!-- =========================================================
+             CREATE BUTTON
+             ========================================================= -->
+
+        <Style x:Key="CreateButton"
+               TargetType="Button">
+
+            <Setter Property="Width"
+                    Value="150"/>
+
+            <Setter Property="Height"
+                    Value="52"/>
+
+            <Setter Property="FontSize"
+                    Value="16"/>
+
+            <Setter Property="FontWeight"
+                    Value="SemiBold"/>
+
+            <Setter Property="Foreground"
+                    Value="White"/>
+
+            <Setter Property="Background"
+                    Value="#C58A22"/>
+
+            <Setter Property="BorderBrush"
+                    Value="#A96E0A"/>
+
+            <Setter Property="BorderThickness"
+                    Value="1"/>
+
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="13">
+
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="#D49A31"/>
+
+                            </Trigger>
+
+                            <Trigger Property="IsPressed"
+                                     Value="True">
+
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="#AA7110"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+    </Window.Resources>
+
+
+    <!-- =============================================================
+         PAGE
+         ============================================================= -->
+
+    <Grid Margin="38,32,38,30">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+
+        <!-- =========================================================
+             HEADER
+             ========================================================= -->
+
+        <Grid Grid.Row="0"
+              Margin="0,0,0,28">
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Width="56"
+                    Height="56"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Background="#FFF0D7"
+                    CornerRadius="17">
+
+                <TextBlock Text="▣"
+                           Foreground="#B97805"
+                           FontSize="27"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+
+            </Border>
+
+            <StackPanel Grid.Column="1"
+                        VerticalAlignment="Center">
+
+                <TextBlock Text="Новый проект"
+                           FontSize="28"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource TextBrush}"/>
+
+                <TextBlock Text="Создайте новый проект для учёта рабочего времени"
+                           FontSize="13"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Margin="0,3,0,0"/>
+
+            </StackPanel>
+
+        </Grid>
+
+
+        <!-- =========================================================
+             PROJECT NAME
+             ========================================================= -->
+
+        <StackPanel Grid.Row="1"
+                    Margin="0,0,0,22">
+
+            <TextBlock Text="Название проекта"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource TextBrush}"
+                       Margin="2,0,0,8"/>
+
+            <Grid>
+
+                <TextBox x:Name="NameTextBox"
+                         Style="{StaticResource ProjectTextBox}"
+                         Padding="58,0,16,0"/>
+
+                <Border Width="44"
+                        Height="44"
+                        Margin="6,0,0,0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Background="#FFF4E2"
+                        CornerRadius="10"
+                        IsHitTestVisible="False">
+
+                    <TextBlock Text="▣"
+                               Foreground="#B97805"
+                               FontSize="20"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+
+                </Border>
+
+            </Grid>
+
+        </StackPanel>
+
+
+        <!-- =========================================================
+             HOURLY RATE
+             ========================================================= -->
+
+        <StackPanel Grid.Row="2">
+
+            <TextBlock Text="Ставка в час (€)"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource TextBrush}"
+                       Margin="2,0,0,8"/>
+
+            <Grid>
+
+                <TextBox x:Name="HourlyRateTextBox"
+                         Style="{StaticResource ProjectTextBox}"
+                         Padding="58,0,16,0"
+                         Text="0"/>
+
+                <Border Width="44"
+                        Height="44"
+                        Margin="6,0,0,0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Background="#FFF4E2"
+                        CornerRadius="10"
+                        IsHitTestVisible="False">
+
+                    <TextBlock Text="€"
+                               Foreground="#B97805"
+                               FontSize="23"
+                               FontWeight="Bold"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+
+                </Border>
+
+            </Grid>
+
+        </StackPanel>
+
+
+        <!-- =========================================================
+             BUTTONS
+             ========================================================= -->
+
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+
+            <Button Content="Отмена"
+                    Style="{StaticResource CancelButton}"
+                    Margin="0,0,12,0"
+                    Click="Cancel_Click"/>
+
+            <Button Content="Создать"
+                    Style="{StaticResource CreateButton}"
+                    Click="Create_Click"/>
+
+        </StackPanel>
+
+    </Grid>
+
+</Window>
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\NewProjectWindow.xaml.cs ====================
+using System.Globalization;
+using System.Windows;
+
+namespace WorkTime;
+
+public partial class NewProjectWindow : Window
+{
+    public NewProjectWindow()
+    {
+        InitializeComponent();
+
+        Loaded += (_, _) =>
+        {
+            NameTextBox.Focus();
+        };
+    }
+
+    public string ProjectName =>
+        NameTextBox.Text.Trim();
+
+    public decimal HourlyRate { get; private set; }
+
+    private void Create_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(ProjectName))
+        {
+            MessageBox.Show(
+                "Введите название проекта.",
+                "WorkTime",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        if (!decimal.TryParse(
+                HourlyRateTextBox.Text,
+                NumberStyles.Number,
+                CultureInfo.CurrentCulture,
+                out var hourlyRate) ||
+            hourlyRate < 0)
+        {
+            MessageBox.Show(
+                "Введите корректную ставку.",
+                "WorkTime",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        HourlyRate = hourlyRate;
+        DialogResult = true;
+    }
+
+    private void Cancel_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        DialogResult = false;
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\ProjectSettingsWindow.xaml ====================
+
+<Window x:Class="WorkTime.ProjectSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Настройки проекта"
+        Width="620"
+        Height="700"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#F8F7F4"
+        FontFamily="Segoe UI"
+        FontSize="14">
+
+    <Window.Resources>
+
+        <SolidColorBrush x:Key="TextBrush"
+                         Color="#0D1B36"/>
+
+        <SolidColorBrush x:Key="MutedTextBrush"
+                         Color="#78859D"/>
+
+        <Style x:Key="InputTextBox"
+               TargetType="TextBox">
+
+            <Setter Property="Height" Value="48"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="Foreground"
+                    Value="{StaticResource TextBrush}"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#DDD7CC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="VerticalContentAlignment"
+                    Value="Center"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="TextBox">
+
+                        <Border x:Name="InputBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="11">
+
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsKeyboardFocused"
+                                     Value="True">
+
+                                <Setter TargetName="InputBorder"
+                                        Property="BorderBrush"
+                                        Value="#C58A22"/>
+
+                                <Setter TargetName="InputBorder"
+                                        Property="BorderThickness"
+                                        Value="2"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <Style x:Key="CancelButton"
+               TargetType="Button">
+
+            <Setter Property="Width" Value="140"/>
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#344054"/>
+            <Setter Property="BorderBrush" Value="#D8D4CD"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="Border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12">
+
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="Border"
+                                        Property="Background"
+                                        Value="#F2F0EC"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <Style x:Key="SaveButton"
+               TargetType="Button"
+               BasedOn="{StaticResource CancelButton}">
+
+            <Setter Property="Width" Value="150"/>
+            <Setter Property="Background" Value="#C58A22"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#A96E0A"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="Border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12">
+
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="Border"
+                                        Property="Background"
+                                        Value="#D49A31"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+    </Window.Resources>
+
+
+    <Grid Margin="38,30">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+
+        <!-- HEADER -->
+
+        <Grid Grid.Row="0"
+              Margin="0,0,0,24">
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Width="56"
+                    Height="56"
+                    Background="#FFF0D7"
+                    CornerRadius="17"
+                    HorizontalAlignment="Left">
+
+                <TextBlock Text="⚙"
+                           FontSize="27"
+                           Foreground="#B97805"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+
+            </Border>
+
+            <StackPanel Grid.Column="1"
+                        VerticalAlignment="Center">
+
+                <TextBlock Text="Настройки проекта"
+                           FontSize="27"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource TextBrush}"/>
+
+                <TextBlock Text="Параметры учёта времени и оплаты"
+                           FontSize="13"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Margin="0,3,0,0"/>
+
+            </StackPanel>
+
+        </Grid>
+
+
+        <!-- FORM -->
+
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto">
+
+            <StackPanel>
+
+                <TextBlock Text="Название проекта"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="NameTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,18"/>
+
+
+                <TextBlock Text="Ставка в час (€)"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="HourlyRateTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,18"/>
+
+
+                <TextBlock Text="Договорная цена (€)"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="AgreedPriceTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,5"/>
+
+                <TextBlock Text="Можно оставить пустым"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           FontSize="12"
+                           Margin="3,0,0,18"/>
+
+
+                <TextBlock Text="Дневная цель (минут)"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="DailyTargetTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,5"/>
+
+                <TextBlock Text="Например: 480 = 8 часов"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           FontSize="12"
+                           Margin="3,0,0,18"/>
+
+
+                <TextBlock Text="Предупредить за (минут)"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="ReminderBeforeTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,18"/>
+
+
+                <CheckBox x:Name="NotificationsCheckBox"
+                          Content="Включить уведомления"
+                          FontSize="15"
+                          FontWeight="SemiBold"
+                          Foreground="{StaticResource TextBrush}"
+                          VerticalContentAlignment="Center"/>
+
+            </StackPanel>
+
+        </ScrollViewer>
+
+
+        <!-- ACTIONS -->
+
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,24,0,0">
+
+            <Button Content="Отмена"
+                    Style="{StaticResource CancelButton}"
+                    Margin="0,0,12,0"
+                    Click="Cancel_Click"/>
+
+            <Button Content="Сохранить"
+                    Style="{StaticResource SaveButton}"
+                    Click="Save_Click"/>
+
+        </StackPanel>
+
+    </Grid>
+
+</Window>
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\ProjectSettingsWindow.xaml.cs ====================
+using System.Globalization;
+using System.Windows;
+using WorkTime.Models;
+
+namespace WorkTime;
+
+public partial class ProjectSettingsWindow : Window
+{
+    public ProjectSettingsWindow(Project project)
+    {
+        InitializeComponent();
+
+        NameTextBox.Text = project.Name;
+
+        HourlyRateTextBox.Text =
+            project.HourlyRate.ToString(
+                "0.##",
+                CultureInfo.CurrentCulture);
+
+        AgreedPriceTextBox.Text =
+            project.AgreedPrice?.ToString(
+                "0.##",
+                CultureInfo.CurrentCulture)
+            ?? string.Empty;
+
+        DailyTargetTextBox.Text =
+            project.DailyTargetMinutes?.ToString()
+            ?? string.Empty;
+
+        ReminderBeforeTextBox.Text =
+            project.ReminderBeforeMinutes?.ToString()
+            ?? string.Empty;
+
+        NotificationsCheckBox.IsChecked =
+            project.NotificationsEnabled;
+    }
+
+    public string ProjectName { get; private set; } =
+        string.Empty;
+
+    public decimal HourlyRate { get; private set; }
+
+    public decimal? AgreedPrice { get; private set; }
+
+    public int? DailyTargetMinutes { get; private set; }
+
+    public int? ReminderBeforeMinutes { get; private set; }
+
+    public bool NotificationsEnabled { get; private set; }
+
+
+    private void Save_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var name = NameTextBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            MessageBox.Show(
+                this,
+                "Введите название проекта.",
+                "WorkTime",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+
+            return;
+        }
+
+        if (!decimal.TryParse(
+                HourlyRateTextBox.Text,
+                NumberStyles.Number,
+                CultureInfo.CurrentCulture,
+                out var hourlyRate) ||
+            hourlyRate < 0)
+        {
+            MessageBox.Show(
+                this,
+                "Введите корректную ставку.",
+                "WorkTime",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+
+            return;
+        }
+
+        decimal? agreedPrice = null;
+
+        if (!string.IsNullOrWhiteSpace(
+                AgreedPriceTextBox.Text))
+        {
+            if (!decimal.TryParse(
+                    AgreedPriceTextBox.Text,
+                    NumberStyles.Number,
+                    CultureInfo.CurrentCulture,
+                    out var value) ||
+                value < 0)
+            {
+                MessageBox.Show(
+                    this,
+                    "Введите корректную договорную цену.",
+                    "WorkTime",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                return;
+            }
+
+            agreedPrice = value;
+        }
+
+        int? dailyTarget = null;
+
+        if (!string.IsNullOrWhiteSpace(
+                DailyTargetTextBox.Text))
+        {
+            if (!int.TryParse(
+                    DailyTargetTextBox.Text,
+                    out var value) ||
+                value <= 0)
+            {
+                MessageBox.Show(
+                    this,
+                    "Дневная цель должна быть больше 0 минут.",
+                    "WorkTime",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                return;
+            }
+
+            dailyTarget = value;
+        }
+
+        int? reminderBefore = null;
+
+        if (!string.IsNullOrWhiteSpace(
+                ReminderBeforeTextBox.Text))
+        {
+            if (!int.TryParse(
+                    ReminderBeforeTextBox.Text,
+                    out var value) ||
+                value < 0)
+            {
+                MessageBox.Show(
+                    this,
+                    "Время предупреждения не может быть отрицательным.",
+                    "WorkTime",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                return;
+            }
+
+            reminderBefore = value;
+        }
+
+        ProjectName = name;
+        HourlyRate = hourlyRate;
+        AgreedPrice = agreedPrice;
+        DailyTargetMinutes = dailyTarget;
+        ReminderBeforeMinutes = reminderBefore;
+        NotificationsEnabled =
+            NotificationsCheckBox.IsChecked == true;
+
+        DialogResult = true;
+    }
+
+
+    private void Cancel_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        DialogResult = false;
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Services\IClock.cs ====================
+namespace WorkTime.Services;
+
+public interface IClock
+{
+    DateTime Now { get; }
+}
+
+public sealed class SystemClock : IClock
+{
+    public DateTime Now => DateTime.Now;
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Services\NotificationService.cs ====================
+using Microsoft.Windows.AppNotifications;
+using Microsoft.Windows.AppNotifications.Builder;
+using System.Windows;
+
+namespace WorkTime.Services;
+
+public sealed class NotificationService
+{
+    private readonly HashSet<string> _shownNotifications = [];
+
+    public void Initialize()
+    {
+        AppNotificationManager.Default.NotificationInvoked +=
+            OnNotificationInvoked;
+
+        AppNotificationManager.Default.Register();
+    }
+
+    private static void OnNotificationInvoked(
+        AppNotificationManager sender,
+        AppNotificationActivatedEventArgs args)
+    {
+    }
+
+    public void Shutdown()
+    {
+        AppNotificationManager.Default.Unregister();
+    }
+
+    public void ShowDailyTargetReminder(
+        int projectId,
+        string projectName,
+        DateTime date,
+        int remainingMinutes,
+        TimeSpan workedTime,
+        int targetMinutes)
+    {
+        var key =
+            $"reminder:{projectId}:{date:yyyy-MM-dd}";
+
+        if (!_shownNotifications.Add(key))
+        {
+            return;
+        }
+
+        var workedText =
+            FormatDuration(workedTime);
+
+        var targetText =
+            FormatDuration(
+                TimeSpan.FromMinutes(targetMinutes));
+
+        var notification =
+            new AppNotificationBuilder()
+                .AddText(projectName)
+                .AddText(
+                    $"â± Ð”Ð¾ Ð´Ð½ÐµÐ²Ð½Ð¾Ð¹ Ñ†ÐµÐ»Ð¸ Ð¾ÑÑ‚Ð°Ð»Ð¾ÑÑŒ {remainingMinutes} Ð¼Ð¸Ð½.")
+                .AddText(
+                    $"Ð¡ÐµÐ³Ð¾Ð´Ð½Ñ: {workedText} Ð¸Ð· {targetText}")
+                .BuildNotification();
+
+        AppNotificationManager.Default.Show(
+            notification);
+    }
+
+    public void ShowDailyTargetReached(
+        int projectId,
+        string projectName,
+        DateTime date,
+        TimeSpan workedTime)
+    {
+        var key =
+            $"target:{projectId}:{date:yyyy-MM-dd}";
+
+        if (!_shownNotifications.Add(key))
+        {
+            return;
+        }
+
+        var notification =
+            new AppNotificationBuilder()
+                .AddText(projectName)
+                .AddText("âœ“ Ð”Ð½ÐµÐ²Ð½Ð°Ñ Ñ†ÐµÐ»ÑŒ Ð²Ñ‹Ð¿Ð¾Ð»Ð½ÐµÐ½Ð°")
+                .AddText(
+                    $"Ð¡ÐµÐ³Ð¾Ð´Ð½Ñ: {FormatDuration(workedTime)}")
+                .BuildNotification();
+
+        AppNotificationManager.Default.Show(notification);
+
+    }
+
+    private static string FormatDuration(
+        TimeSpan duration)
+    {
+        var hours =
+            (int)duration.TotalHours;
+
+        return
+            $"{hours} Ñ‡ {duration.Minutes:00} Ð¼Ð¸Ð½";
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Services\ProjectAnalyticsService.cs ====================
+using Microsoft.EntityFrameworkCore;
+using WorkTime.Data;
+using WorkTime.Models;
+
+namespace WorkTime.Services;
+
+public sealed class ProjectAnalyticsService
+{
+    private readonly WorkTimeDbContext _dbContext;
+    private readonly IClock _clock;
+
+    public ProjectAnalyticsService(
+        WorkTimeDbContext dbContext,
+        IClock clock)
+    {
+        _dbContext = dbContext;
+        _clock = clock;
+    }
+
+    public async Task<ProjectAnalytics> GetAsync(
+        int projectId)
+    {
+        var project = await _dbContext.Projects
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == projectId);
+
+        var sessions = await _dbContext.WorkSessions
+            .AsNoTracking()
+            .Where(x => x.ProjectId == projectId)
+            .ToListAsync();
+
+        var workedTime = TimeSpan.Zero;
+        var now = _clock.Now;
+
+        foreach (var session in sessions)
+        {
+            var end = session.EndedAt ?? now;
+
+            if (end > session.StartedAt)
+            {
+                workedTime += end - session.StartedAt;
+            }
+        }
+
+        var workedHours =
+            (decimal)workedTime.TotalHours;
+
+        var earnedAmount = decimal.Round(
+            workedHours * project.HourlyRate,
+            2,
+            MidpointRounding.AwayFromZero);
+
+        decimal? remainingAmount = null;
+        decimal? progressPercent = null;
+        decimal? effectiveHourlyRate = null;
+
+        if (project.AgreedPrice is not null)
+        {
+            remainingAmount = decimal.Max(
+                0,
+                project.AgreedPrice.Value -
+                earnedAmount);
+
+            if (project.AgreedPrice.Value > 0)
+            {
+                progressPercent = decimal.Round(
+                    earnedAmount /
+                    project.AgreedPrice.Value *
+                    100,
+                    1,
+                    MidpointRounding.AwayFromZero);
+            }
+
+            if (workedHours > 0)
+            {
+                effectiveHourlyRate = decimal.Round(
+                    project.AgreedPrice.Value /
+                    workedHours,
+                    2,
+                    MidpointRounding.AwayFromZero);
+            }
+        }
+
+        return new ProjectAnalytics
+        {
+            WorkedTime = workedTime,
+            HourlyRate = project.HourlyRate,
+            EarnedAmount = earnedAmount,
+            AgreedPrice = project.AgreedPrice,
+            RemainingAmount = remainingAmount,
+            ProgressPercent = progressPercent,
+            EffectiveHourlyRate = effectiveHourlyRate
+        };
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Services\ProjectService.cs ====================
+using Microsoft.EntityFrameworkCore;
+using WorkTime.Data;
+using WorkTime.Models;
+
+namespace WorkTime.Services;
+
+public sealed class ProjectService
+{
+    private readonly WorkTimeDbContext _dbContext;
+
+    public ProjectService(WorkTimeDbContext dbContext)
+    {
+        _dbContext = dbContext;
+    }
+
+    public async Task<List<Project>> GetActiveProjectsAsync()
+    {
+        return await _dbContext.Projects
+            .Where(x => !x.IsArchived)
+            .OrderBy(x => x.Name)
+            .ToListAsync();
+    }
+
+    public async Task<Project> CreateAsync(
+        string name,
+        decimal hourlyRate)
+    {
+        name = name.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException(
+                "Project name is required.",
+                nameof(name));
+        }
+
+        if (hourlyRate < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(hourlyRate),
+                "Hourly rate cannot be negative.");
+        }
+
+        var project = new Project
+        {
+            Name = name,
+            HourlyRate = hourlyRate,
+            CreatedAt = DateTime.Now
+        };
+
+        _dbContext.Projects.Add(project);
+        await _dbContext.SaveChangesAsync();
+
+        return project;
+    }
+
+    public async Task ArchiveAsync(int projectId)
+    {
+        var project = await _dbContext.Projects
+            .SingleOrDefaultAsync(x => x.Id == projectId);
+
+        if (project is null)
+        {
+            throw new InvalidOperationException(
+                "Project does not exist.");
+        }
+
+        project.IsArchived = true;
+
+        await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task<Project> UpdateAsync(
+    int projectId,
+    string name,
+    decimal hourlyRate,
+    decimal? agreedPrice,
+    int? dailyTargetMinutes,
+    int? reminderBeforeMinutes,
+    bool notificationsEnabled)
+    {
+        name = name.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException(
+                "Project name is required.",
+                nameof(name));
+        }
+
+        if (hourlyRate < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(hourlyRate),
+                "Hourly rate cannot be negative.");
+        }
+
+        if (agreedPrice is < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(agreedPrice),
+                "Agreed price cannot be negative.");
+        }
+
+        if (dailyTargetMinutes is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(dailyTargetMinutes),
+                "Daily target must be greater than zero.");
+        }
+
+        if (reminderBeforeMinutes is < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(reminderBeforeMinutes),
+                "Reminder cannot be negative.");
+        }
+
+        var project = await _dbContext.Projects
+            .SingleOrDefaultAsync(x => x.Id == projectId);
+
+        if (project is null)
+        {
+            throw new InvalidOperationException(
+                "Project does not exist.");
+        }
+
+        project.Name = name;
+        project.HourlyRate = hourlyRate;
+        project.AgreedPrice = agreedPrice;
+        project.DailyTargetMinutes = dailyTargetMinutes;
+        project.ReminderBeforeMinutes = reminderBeforeMinutes;
+        project.NotificationsEnabled = notificationsEnabled;
+
+        await _dbContext.SaveChangesAsync();
+
+        return project;
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Services\TimeAggregationService.cs ====================
+using Microsoft.EntityFrameworkCore;
+using WorkTime.Data;
+using WorkTime.Models;
+
+namespace WorkTime.Services;
+
+public sealed class TimeAggregationService
+{
+    private readonly WorkTimeDbContext _dbContext;
+    private readonly IClock _clock;
+
+    public TimeAggregationService(
+        WorkTimeDbContext dbContext,
+        IClock clock)
+    {
+        _dbContext = dbContext;
+        _clock = clock;
+    }
+
+    public async Task<TimeSpan> GetWorkedTimeForDayAsync(
+        DateTime date)
+    {
+        var start = date.Date;
+        var end = start.AddDays(1);
+
+        var sessions = await GetSessionsAsync(
+            start,
+            end,
+            null);
+
+        return CalculateDuration(
+            sessions.Select(x =>
+                (x.StartedAt, x.EndedAt)),
+            start,
+            end);
+    }
+
+    public async Task<List<DailyWorkSummary>>
+        GetDailyWorkedTimeAsync(
+            DateTime from,
+            DateTime to)
+    {
+        var rangeStart = from.Date;
+        var rangeEnd = to.Date.AddDays(1);
+
+        if (rangeEnd <= rangeStart)
+        {
+            return [];
+        }
+
+        var sessions = await GetSessionsAsync(
+            rangeStart,
+            rangeEnd,
+            null);
+
+        var result =
+            new List<DailyWorkSummary>();
+
+        for (var day = rangeStart;
+             day < rangeEnd;
+             day = day.AddDays(1))
+        {
+            var dayEnd = day.AddDays(1);
+
+            result.Add(new DailyWorkSummary
+            {
+                Date = day,
+                WorkedTime = CalculateDuration(
+                    sessions.Select(x =>
+                        (x.StartedAt, x.EndedAt)),
+                    day,
+                    dayEnd)
+            });
+        }
+
+        return result;
+    }
+
+    public async Task<HistorySummary> GetHistorySummaryAsync(
+        int projectId,
+        DateTime selectedDate,
+        HistoryPeriod period)
+    {
+        var (start, end) =
+            GetPeriodRange(selectedDate, period);
+
+        var project = await _dbContext.Projects
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == projectId);
+
+        var sessions = await GetSessionsAsync(
+            start,
+            end,
+            projectId);
+
+        var pauses = await _dbContext.PauseIntervals
+            .AsNoTracking()
+            .Where(x =>
+                x.ProjectId == projectId &&
+                x.StartedAt < end &&
+                (x.EndedAt == null ||
+                 x.EndedAt > start))
+            .ToListAsync();
+
+        var workedTime = CalculateDuration(
+            sessions.Select(x =>
+                (x.StartedAt, x.EndedAt)),
+            start,
+            end);
+
+        var pauseTime = CalculateDuration(
+            pauses.Select(x =>
+                (x.StartedAt, x.EndedAt)),
+            start,
+            end);
+
+        var amount =
+            (decimal)workedTime.TotalHours *
+            project.HourlyRate;
+
+        return new HistorySummary
+        {
+            WorkedTime = workedTime,
+            PauseTime = pauseTime,
+            HourlyRate = project.HourlyRate,
+            Amount = decimal.Round(
+                amount,
+                2,
+                MidpointRounding.AwayFromZero)
+        };
+    }
+
+    public static (DateTime Start, DateTime End)
+        GetPeriodRange(
+            DateTime selectedDate,
+            HistoryPeriod period)
+    {
+        var date = selectedDate.Date;
+
+        return period switch
+        {
+            HistoryPeriod.Day =>
+                (date, date.AddDays(1)),
+
+            HistoryPeriod.Week =>
+                GetWeekRange(date),
+
+            HistoryPeriod.Month =>
+                (
+                    new DateTime(
+                        date.Year,
+                        date.Month,
+                        1),
+                    new DateTime(
+                        date.Year,
+                        date.Month,
+                        1).AddMonths(1)
+                ),
+
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(period))
+        };
+    }
+
+    private static (DateTime Start, DateTime End)
+        GetWeekRange(DateTime date)
+    {
+        var daysSinceMonday =
+            ((int)date.DayOfWeek + 6) % 7;
+
+        var start =
+            date.AddDays(-daysSinceMonday);
+
+        return (
+            start,
+            start.AddDays(7));
+    }
+
+    private async Task<List<WorkSession>>
+        GetSessionsAsync(
+            DateTime start,
+            DateTime end,
+            int? projectId)
+    {
+        var query = _dbContext.WorkSessions
+            .AsNoTracking()
+            .Where(x =>
+                x.StartedAt < end &&
+                (x.EndedAt == null ||
+                 x.EndedAt > start));
+
+        if (projectId is not null)
+        {
+            query = query.Where(
+                x => x.ProjectId == projectId);
+        }
+
+        return await query.ToListAsync();
+    }
+
+    private TimeSpan CalculateDuration(
+        IEnumerable<(DateTime StartedAt, DateTime? EndedAt)>
+            intervals,
+        DateTime rangeStart,
+        DateTime rangeEnd)
+    {
+        var total = TimeSpan.Zero;
+        var now = _clock.Now;
+
+        foreach (var interval in intervals)
+        {
+            var intervalEnd =
+                interval.EndedAt ?? now;
+
+            var effectiveStart =
+                interval.StartedAt < rangeStart
+                    ? rangeStart
+                    : interval.StartedAt;
+
+            var effectiveEnd =
+                intervalEnd > rangeEnd
+                    ? rangeEnd
+                    : intervalEnd;
+
+            if (effectiveEnd > effectiveStart)
+            {
+                total +=
+                    effectiveEnd - effectiveStart;
+            }
+        }
+
+        return total;
+    }
+
+    public async Task<TimeSpan> GetWorkedTimeForProjectDayAsync(
+    int projectId,
+    DateTime date)
+    {
+        var dayStart = date.Date;
+        var dayEnd = dayStart.AddDays(1);
+
+        var sessions = await GetSessionsAsync(
+            dayStart,
+            dayEnd,
+            projectId);
+
+        return CalculateDuration(
+            sessions.Select(x =>
+                (x.StartedAt, x.EndedAt)),
+            dayStart,
+            dayEnd);
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\Services\WorkTimerService.cs ====================
+using Microsoft.EntityFrameworkCore;
+using WorkTime.Data;
+using WorkTime.Models;
+
+namespace WorkTime.Services;
+
+public sealed class WorkTimerService
+{
+    private readonly WorkTimeDbContext _dbContext;
+    private readonly IClock _clock;
+
+    public WorkTimerService(
+        WorkTimeDbContext dbContext,
+        IClock clock)
+    {
+        _dbContext = dbContext;
+        _clock = clock;
+    }
+
+    public WorkTimerState State { get; private set; } =
+        WorkTimerState.Stopped;
+
+    public int? ActiveProjectId { get; private set; }
+
+    public WorkSession? ActiveSession { get; private set; }
+
+    public PauseInterval? ActivePause { get; private set; }
+
+    public async Task RestoreAsync()
+    {
+        var activeSessions = await _dbContext.WorkSessions
+            .Where(x => x.EndedAt == null)
+            .OrderBy(x => x.StartedAt)
+            .ToListAsync();
+
+        var activePauses = await _dbContext.PauseIntervals
+            .Where(x => x.EndedAt == null)
+            .OrderBy(x => x.StartedAt)
+            .ToListAsync();
+
+        if (activeSessions.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one active WorkSession exists.");
+        }
+
+        if (activePauses.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "More than one active PauseInterval exists.");
+        }
+
+        if (activeSessions.Count == 1 &&
+            activePauses.Count == 1)
+        {
+            throw new InvalidOperationException(
+                "A work session and pause cannot both be active.");
+        }
+
+        ActiveSession = activeSessions.SingleOrDefault();
+        ActivePause = activePauses.SingleOrDefault();
+
+        if (ActiveSession is not null)
+        {
+            ActiveProjectId = ActiveSession.ProjectId;
+            State = WorkTimerState.Running;
+            return;
+        }
+
+        if (ActivePause is not null)
+        {
+            ActiveProjectId = ActivePause.ProjectId;
+            State = WorkTimerState.Paused;
+            return;
+        }
+
+        ActiveProjectId = null;
+        State = WorkTimerState.Stopped;
+    }
+
+    public async Task StartAsync(int projectId)
+    {
+        if (State != WorkTimerState.Stopped)
+        {
+            throw new InvalidOperationException(
+                "The timer can only be started from the Stopped state.");
+        }
+
+        await EnsureProjectCanBeUsedAsync(projectId);
+        await EnsureNothingActiveAsync();
+
+        ActiveSession = new WorkSession
+        {
+            ProjectId = projectId,
+            StartedAt = _clock.Now
+        };
+
+        _dbContext.WorkSessions.Add(ActiveSession);
+        await _dbContext.SaveChangesAsync();
+
+        ActiveProjectId = projectId;
+        State = WorkTimerState.Running;
+    }
+
+    public async Task PauseAsync()
+    {
+        EnsureRunning();
+
+        var pausedAt = _clock.Now;
+
+        ActiveSession!.EndedAt = pausedAt;
+
+        ActivePause = new PauseInterval
+        {
+            ProjectId = ActiveProjectId!.Value,
+            StartedAt = pausedAt
+        };
+
+        _dbContext.PauseIntervals.Add(ActivePause);
+
+        await _dbContext.SaveChangesAsync();
+
+        ActiveSession = null;
+        State = WorkTimerState.Paused;
+    }
+
+    public async Task ResumeAsync()
+    {
+        if (State != WorkTimerState.Paused ||
+            ActiveProjectId is null ||
+            ActivePause is null)
+        {
+            throw new InvalidOperationException(
+                "The timer can only be resumed from the Paused state.");
+        }
+
+        await EnsureProjectCanBeUsedAsync(
+            ActiveProjectId.Value);
+
+        var resumedAt = _clock.Now;
+
+        ActivePause.EndedAt = resumedAt;
+
+        ActiveSession = new WorkSession
+        {
+            ProjectId = ActiveProjectId.Value,
+            StartedAt = resumedAt
+        };
+
+        _dbContext.WorkSessions.Add(ActiveSession);
+
+        await _dbContext.SaveChangesAsync();
+
+        ActivePause = null;
+        State = WorkTimerState.Running;
+    }
+
+    public async Task FinishAsync()
+    {
+        if (State == WorkTimerState.Stopped)
+        {
+            return;
+        }
+
+        var finishedAt = _clock.Now;
+
+        if (State == WorkTimerState.Running)
+        {
+            ActiveSession!.EndedAt = finishedAt;
+            ActiveSession = null;
+        }
+        else if (State == WorkTimerState.Paused)
+        {
+            if (ActivePause is null)
+            {
+                throw new InvalidOperationException(
+                    "Paused state has no active pause.");
+            }
+
+            ActivePause.EndedAt = finishedAt;
+            ActivePause = null;
+        }
+
+        await _dbContext.SaveChangesAsync();
+
+        ActiveProjectId = null;
+        State = WorkTimerState.Stopped;
+    }
+
+    public async Task SwitchProjectAsync(int projectId)
+    {
+        EnsureRunning();
+
+        if (ActiveProjectId == projectId)
+        {
+            return;
+        }
+
+        await EnsureProjectCanBeUsedAsync(projectId);
+
+        var switchedAt = _clock.Now;
+
+        await using var transaction =
+            await _dbContext.Database.BeginTransactionAsync();
+
+        ActiveSession!.EndedAt = switchedAt;
+
+        var newSession = new WorkSession
+        {
+            ProjectId = projectId,
+            StartedAt = switchedAt
+        };
+
+        _dbContext.WorkSessions.Add(newSession);
+
+        await _dbContext.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        ActiveSession = newSession;
+        ActiveProjectId = projectId;
+    }
+
+    private void EnsureRunning()
+    {
+        if (State != WorkTimerState.Running ||
+            ActiveSession is null ||
+            ActiveProjectId is null)
+        {
+            throw new InvalidOperationException(
+                "The timer is not currently running.");
+        }
+    }
+
+    private async Task EnsureProjectCanBeUsedAsync(
+        int projectId)
+    {
+        var exists = await _dbContext.Projects
+            .AnyAsync(x =>
+                x.Id == projectId &&
+                !x.IsArchived);
+
+        if (!exists)
+        {
+            throw new InvalidOperationException(
+                "The selected project does not exist or is archived.");
+        }
+    }
+
+    private async Task EnsureNothingActiveAsync()
+    {
+        var hasWorkSession =
+            await _dbContext.WorkSessions
+                .AnyAsync(x => x.EndedAt == null);
+
+        var hasPause =
+            await _dbContext.PauseIntervals
+                .AnyAsync(x => x.EndedAt == null);
+
+        if (hasWorkSession || hasPause)
+        {
+            throw new InvalidOperationException(
+                "An active timer state already exists.");
+        }
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\ViewModels\HistoryViewModel.cs ====================
+using System.ComponentModel;
+using System.Globalization;
+using System.Runtime.CompilerServices;
+using WorkTime.Models;
+using WorkTime.Services;
+
+namespace WorkTime.ViewModels;
+
+public sealed class HistoryViewModel :
+    INotifyPropertyChanged
+{
+    private readonly TimeAggregationService
+        _aggregationService;
+
+    private Project? _selectedProject;
+
+    private DateTime _selectedDate =
+        DateTime.Today;
+
+    private HistoryPeriod _selectedPeriod =
+        HistoryPeriod.Day;
+
+    private HistorySummary? _summary;
+
+    public HistoryViewModel(
+        TimeAggregationService aggregationService,
+        IEnumerable<Project> projects,
+        Project? selectedProject)
+    {
+        _aggregationService = aggregationService;
+
+        Projects = projects.ToList();
+
+        _selectedProject =
+            selectedProject ??
+            Projects.FirstOrDefault();
+    }
+
+    public event PropertyChangedEventHandler?
+        PropertyChanged;
+
+    public List<Project> Projects { get; }
+
+    public Project? SelectedProject
+    {
+        get => _selectedProject;
+        set
+        {
+            if (_selectedProject?.Id == value?.Id)
+            {
+                return;
+            }
+
+            _selectedProject = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public DateTime SelectedDate
+    {
+        get => _selectedDate;
+        set
+        {
+            var date = value.Date;
+
+            if (_selectedDate == date)
+            {
+                return;
+            }
+
+            _selectedDate = date;
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PeriodText));
+        }
+    }
+
+    public HistoryPeriod SelectedPeriod
+    {
+        get => _selectedPeriod;
+        private set
+        {
+            if (_selectedPeriod == value)
+            {
+                return;
+            }
+
+            _selectedPeriod = value;
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PeriodText));
+        }
+    }
+
+    public bool IsDay =>
+        SelectedPeriod == HistoryPeriod.Day;
+
+    public bool IsWeek =>
+        SelectedPeriod == HistoryPeriod.Week;
+
+    public bool IsMonth =>
+        SelectedPeriod == HistoryPeriod.Month;
+
+    public string PeriodText
+    {
+        get
+        {
+            var (start, end) =
+                TimeAggregationService.GetPeriodRange(
+                    SelectedDate,
+                    SelectedPeriod);
+
+            return SelectedPeriod switch
+            {
+                HistoryPeriod.Day =>
+                    start.ToString("dd.MM.yyyy"),
+
+                HistoryPeriod.Week =>
+                    $"{start:dd.MM.yyyy} — " +
+                    $"{end.AddDays(-1):dd.MM.yyyy}",
+
+                HistoryPeriod.Month =>
+                    CultureInfo.CurrentCulture
+                        .DateTimeFormat
+                        .GetMonthName(start.Month) +
+                    $" {start.Year}",
+
+                _ => string.Empty
+            };
+        }
+    }
+
+    public string WorkedTimeText =>
+        FormatTime(
+            _summary?.WorkedTime ??
+            TimeSpan.Zero);
+
+    public string PauseTimeText =>
+        FormatTime(
+            _summary?.PauseTime ??
+            TimeSpan.Zero);
+
+    public string HourlyRateText =>
+        $"{(_summary?.HourlyRate ?? 0):N2} €/ч";
+
+    public string AmountText =>
+        $"{(_summary?.Amount ?? 0):N2} €";
+
+    public async Task LoadAsync()
+    {
+        await RefreshAsync();
+    }
+
+    public async Task SetDayAsync()
+    {
+        SelectedPeriod = HistoryPeriod.Day;
+        NotifyPeriodButtons();
+        await RefreshAsync();
+    }
+
+    public async Task SetWeekAsync()
+    {
+        SelectedPeriod = HistoryPeriod.Week;
+        NotifyPeriodButtons();
+        await RefreshAsync();
+    }
+
+    public async Task SetMonthAsync()
+    {
+        SelectedPeriod = HistoryPeriod.Month;
+        NotifyPeriodButtons();
+        await RefreshAsync();
+    }
+
+    public async Task RefreshAsync()
+    {
+        if (SelectedProject is null)
+        {
+            _summary = null;
+            NotifySummary();
+            return;
+        }
+
+        _summary =
+            await _aggregationService
+                .GetHistorySummaryAsync(
+                    SelectedProject.Id,
+                    SelectedDate,
+                    SelectedPeriod);
+
+        OnPropertyChanged(nameof(PeriodText));
+        NotifySummary();
+    }
+
+    private void NotifyPeriodButtons()
+    {
+        OnPropertyChanged(nameof(IsDay));
+        OnPropertyChanged(nameof(IsWeek));
+        OnPropertyChanged(nameof(IsMonth));
+        OnPropertyChanged(nameof(PeriodText));
+    }
+
+    private void NotifySummary()
+    {
+        OnPropertyChanged(nameof(WorkedTimeText));
+        OnPropertyChanged(nameof(PauseTimeText));
+        OnPropertyChanged(nameof(HourlyRateText));
+        OnPropertyChanged(nameof(AmountText));
+    }
+
+    private static string FormatTime(
+        TimeSpan time)
+    {
+        return
+            $"{(int)time.TotalHours:00}:" +
+            $"{time.Minutes:00}:" +
+            $"{time.Seconds:00}";
+    }
+
+    private void OnPropertyChanged(
+        [CallerMemberName]
+        string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(
+                propertyName));
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\ViewModels\MainViewModel.cs ====================
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using WorkTime.Models;
+using WorkTime.Services;
+
+namespace WorkTime.ViewModels;
+
+public sealed class MainViewModel : INotifyPropertyChanged
+{
+    private readonly ProjectService _projectService;
+    private readonly WorkTimerService _timerService;
+    private readonly TimeAggregationService _aggregationService;
+    private readonly ProjectAnalyticsService _analyticsService;
+    private readonly NotificationService _notificationService;
+
+    private Project? _selectedProject;
+    private TimeSpan _todayWorkedTime;
+    private ProjectAnalytics? _projectAnalytics;
+
+    public MainViewModel(
+    ProjectService projectService,
+    WorkTimerService timerService,
+    TimeAggregationService aggregationService,
+    ProjectAnalyticsService analyticsService,
+    NotificationService notificationService)
+    {
+        _projectService = projectService;
+        _timerService = timerService;
+        _aggregationService = aggregationService;
+        _analyticsService = analyticsService;
+        _notificationService = notificationService;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public List<Project> Projects { get; private set; } = [];
+
+    public Project? SelectedProject
+    {
+        get => _selectedProject;
+        set
+        {
+            if (_selectedProject == value)
+            {
+                return;
+            }
+
+            _selectedProject = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public TimeSpan TodayWorkedTime
+    {
+        get => _todayWorkedTime;
+        private set
+        {
+            if (_todayWorkedTime == value)
+            {
+                return;
+            }
+
+            _todayWorkedTime = value;
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(TodayWorkedTimeText));
+        }
+    }
+
+    public string TodayWorkedTimeText =>
+        $"{(int)TodayWorkedTime.TotalHours:00}:" +
+        $"{TodayWorkedTime.Minutes:00}:" +
+        $"{TodayWorkedTime.Seconds:00}";
+
+    public ProjectAnalytics? ProjectAnalytics
+    {
+        get => _projectAnalytics;
+        private set
+        {
+            _projectAnalytics = value;
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ProjectWorkedTimeText));
+            OnPropertyChanged(nameof(EarnedAmountText));
+            OnPropertyChanged(nameof(HourlyRateText));
+            OnPropertyChanged(nameof(AgreedPriceText));
+            OnPropertyChanged(nameof(RemainingAmountText));
+            OnPropertyChanged(nameof(EffectiveRateText));
+            OnPropertyChanged(nameof(ProgressText));
+            OnPropertyChanged(nameof(HasAgreedPrice));
+        }
+    }
+
+    public string ProjectWorkedTimeText =>
+        ProjectAnalytics is null
+            ? "00:00"
+            : $"{(int)ProjectAnalytics.WorkedTime.TotalHours:00}:" +
+              $"{ProjectAnalytics.WorkedTime.Minutes:00}";
+
+    public string EarnedAmountText =>
+        ProjectAnalytics is null
+            ? "â‚¬0,00"
+            : $"â‚¬{ProjectAnalytics.EarnedAmount:N2}";
+
+    public string HourlyRateText =>
+   ProjectAnalytics is null
+       ? "â‚¬0,00/Ñ‡"
+       : $"â‚¬{ProjectAnalytics.HourlyRate:N2}/Ñ‡";
+
+    public string AgreedPriceText =>
+        ProjectAnalytics?.AgreedPrice is null
+            ? "ÐÐµ Ð·Ð°Ð´Ð°Ð½Ð°"
+            : $"â‚¬{ProjectAnalytics.AgreedPrice.Value:N2}";
+
+    public string RemainingAmountText =>
+        ProjectAnalytics?.RemainingAmount is null
+            ? "â€”"
+            : $"â‚¬{ProjectAnalytics.RemainingAmount.Value:N2}";
+
+    public string EffectiveRateText =>
+        ProjectAnalytics?.EffectiveHourlyRate is null
+            ? "â€”"
+            : $"â‚¬{ProjectAnalytics.EffectiveHourlyRate.Value:N2}/Ñ‡";
+
+    public string ProgressText =>
+        ProjectAnalytics?.ProgressPercent is null
+            ? "â€”"
+            : $"{ProjectAnalytics.ProgressPercent.Value:N1}%";
+
+    public bool HasAgreedPrice =>
+        ProjectAnalytics?.AgreedPrice is not null;
+
+    public WorkTimerState TimerState =>
+        _timerService.State;
+
+    public bool IsRunning =>
+        TimerState == WorkTimerState.Running;
+
+    public bool IsPaused =>
+        TimerState == WorkTimerState.Paused;
+
+    public bool IsStopped =>
+        TimerState == WorkTimerState.Stopped;
+
+    public bool CanFinish =>
+        TimerState == WorkTimerState.Running ||
+        TimerState == WorkTimerState.Paused;
+
+    public async Task InitializeAsync()
+    {
+        await _timerService.RestoreAsync();
+
+        Projects =
+            await _projectService.GetActiveProjectsAsync();
+
+        OnPropertyChanged(nameof(Projects));
+
+        if (_timerService.ActiveProjectId is not null)
+        {
+            SelectedProject =
+                Projects.FirstOrDefault(
+                    x => x.Id ==
+                         _timerService.ActiveProjectId);
+        }
+        else
+        {
+            SelectedProject =
+                Projects.FirstOrDefault();
+        }
+
+        await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
+
+        NotifyTimerStateChanged();
+    }
+
+    public async Task StartAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        await _timerService.StartAsync(
+            SelectedProject.Id);
+
+        await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
+
+        NotifyTimerStateChanged();
+    }
+
+    public async Task PauseAsync()
+    {
+        await _timerService.PauseAsync();
+
+        await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
+
+        NotifyTimerStateChanged();
+    }
+
+    public async Task ResumeAsync()
+    {
+        await _timerService.ResumeAsync();
+
+        await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
+
+        NotifyTimerStateChanged();
+    }
+
+    public async Task FinishAsync()
+    {
+        await _timerService.FinishAsync();
+
+        await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
+
+        NotifyTimerStateChanged();
+    }
+
+    public async Task SwitchProjectAsync(
+    Project project)
+    {
+        if (_timerService.State !=
+            WorkTimerState.Running)
+        {
+            SelectedProject = project;
+
+            await RefreshProjectAnalyticsAsync();
+
+            return;
+        }
+
+        if (_timerService.ActiveProjectId ==
+            project.Id)
+        {
+            SelectedProject = project;
+
+            await RefreshProjectAnalyticsAsync();
+
+            return;
+        }
+
+        await _timerService.SwitchProjectAsync(
+            project.Id);
+
+        SelectedProject = project;
+
+        await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
+
+        NotifyTimerStateChanged();
+    }
+
+    public async Task CreateProjectAsync(
+        string name,
+        decimal hourlyRate)
+    {
+        var project =
+            await _projectService.CreateAsync(
+                name,
+                hourlyRate);
+
+        Projects =
+            await _projectService.GetActiveProjectsAsync();
+
+        OnPropertyChanged(nameof(Projects));
+
+        SelectedProject =
+            Projects.First(
+                x => x.Id == project.Id);
+
+        await RefreshProjectAnalyticsAsync();
+    }
+
+    public async Task UpdateSelectedProjectAsync(
+        string name,
+        decimal hourlyRate,
+        decimal? agreedPrice,
+        int? dailyTargetMinutes,
+        int? reminderBeforeMinutes,
+        bool notificationsEnabled)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        var project =
+            await _projectService.UpdateAsync(
+                SelectedProject.Id,
+                name,
+                hourlyRate,
+                agreedPrice,
+                dailyTargetMinutes,
+                reminderBeforeMinutes,
+                notificationsEnabled);
+
+        SelectedProject = project;
+
+        OnPropertyChanged(nameof(Projects));
+
+        await RefreshProjectAnalyticsAsync();
+    }
+
+    public async Task RefreshTodayAsync()
+    {
+        TodayWorkedTime =
+            await _aggregationService
+                .GetWorkedTimeForDayAsync(
+                    DateTime.Today);
+    }
+
+    public async Task RefreshProjectAnalyticsAsync()
+    {
+        if (SelectedProject is null)
+        {
+            ProjectAnalytics = null;
+            return;
+        }
+
+        ProjectAnalytics =
+            await _analyticsService.GetAsync(
+                SelectedProject.Id);
+    }
+
+    public HistoryViewModel CreateHistoryViewModel()
+    {
+        return new HistoryViewModel(
+            _aggregationService,
+            Projects,
+            SelectedProject);
+    }
+
+    private void NotifyTimerStateChanged()
+    {
+        OnPropertyChanged(nameof(TimerState));
+        OnPropertyChanged(nameof(IsRunning));
+        OnPropertyChanged(nameof(IsPaused));
+        OnPropertyChanged(nameof(IsStopped));
+        OnPropertyChanged(nameof(CanFinish));
+    }
+
+    private void OnPropertyChanged(
+        [CallerMemberName]
+        string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(
+                propertyName));
+    }
+
+    public async Task CheckDailyTargetAsync()
+    {
+        if (_timerService.State != WorkTimerState.Running ||
+            _timerService.ActiveProjectId is null)
+        {
+            return;
+        }
+
+        var project = Projects.FirstOrDefault(
+            x => x.Id == _timerService.ActiveProjectId.Value);
+
+        if (project is null ||
+            !project.NotificationsEnabled ||
+            project.DailyTargetMinutes is null ||
+            project.DailyTargetMinutes <= 0)
+        {
+            return;
+        }
+
+        var workedTime =
+            await _aggregationService.GetWorkedTimeForProjectDayAsync(
+                project.Id,
+                DateTime.Today);
+
+        var workedMinutes =
+            workedTime.TotalMinutes;
+
+        var targetMinutes =
+            project.DailyTargetMinutes.Value;
+
+        if (workedMinutes >= targetMinutes)
+        {
+            _notificationService.ShowDailyTargetReached(
+                project.Id,
+                project.Name,
+                DateTime.Today,
+                workedTime);
+
+            return;
+        }
+
+        if (project.ReminderBeforeMinutes is null ||
+            project.ReminderBeforeMinutes <= 0)
+        {
+            return;
+        }
+
+        var reminderMinutes =
+            project.ReminderBeforeMinutes.Value;
+
+        if (workedMinutes >=
+            targetMinutes - reminderMinutes)
+        {
+            _notificationService.ShowDailyTargetReminder(
+                project.Id,
+                project.Name,
+                DateTime.Today,
+                reminderMinutes,
+                workedTime,
+                targetMinutes);
+        }
+    }
+}
+
+
+==================== FILE: C:\AleksDev\C#\WorkTime\WorkTime\WorkTime.csproj ====================
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <WindowsPackageType>None</WindowsPackageType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.1.3" />
+  </ItemGroup>
+
+</Project>
+
+
