@@ -1,0 +1,322 @@
+﻿
+<Window x:Class="WorkTime.ProjectSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Настройки проекта"
+        Width="620"
+        Height="700"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#F8F7F4"
+        FontFamily="Segoe UI"
+        FontSize="14">
+
+    <Window.Resources>
+
+        <SolidColorBrush x:Key="TextBrush"
+                         Color="#0D1B36"/>
+
+        <SolidColorBrush x:Key="MutedTextBrush"
+                         Color="#78859D"/>
+
+        <Style x:Key="InputTextBox"
+               TargetType="TextBox">
+
+            <Setter Property="Height" Value="48"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="Foreground"
+                    Value="{StaticResource TextBrush}"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#DDD7CC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="VerticalContentAlignment"
+                    Value="Center"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="TextBox">
+
+                        <Border x:Name="InputBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="11">
+
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsKeyboardFocused"
+                                     Value="True">
+
+                                <Setter TargetName="InputBorder"
+                                        Property="BorderBrush"
+                                        Value="#C58A22"/>
+
+                                <Setter TargetName="InputBorder"
+                                        Property="BorderThickness"
+                                        Value="2"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <Style x:Key="CancelButton"
+               TargetType="Button">
+
+            <Setter Property="Width" Value="140"/>
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="#344054"/>
+            <Setter Property="BorderBrush" Value="#D8D4CD"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="Border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12">
+
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="Border"
+                                        Property="Background"
+                                        Value="#F2F0EC"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+
+        <Style x:Key="SaveButton"
+               TargetType="Button"
+               BasedOn="{StaticResource CancelButton}">
+
+            <Setter Property="Width" Value="150"/>
+            <Setter Property="Background" Value="#C58A22"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#A96E0A"/>
+
+            <Setter Property="Template">
+                <Setter.Value>
+
+                    <ControlTemplate TargetType="Button">
+
+                        <Border x:Name="Border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12">
+
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+
+                                <Setter TargetName="Border"
+                                        Property="Background"
+                                        Value="#D49A31"/>
+
+                            </Trigger>
+
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+
+                </Setter.Value>
+            </Setter>
+
+        </Style>
+
+    </Window.Resources>
+
+
+    <Grid Margin="38,30">
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+
+        <!-- HEADER -->
+
+        <Grid Grid.Row="0"
+              Margin="0,0,0,24">
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Width="56"
+                    Height="56"
+                    Background="#FFF0D7"
+                    CornerRadius="17"
+                    HorizontalAlignment="Left">
+
+                <TextBlock Text="⚙"
+                           FontSize="27"
+                           Foreground="#B97805"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+
+            </Border>
+
+            <StackPanel Grid.Column="1"
+                        VerticalAlignment="Center">
+
+                <TextBlock Text="Настройки проекта"
+                           FontSize="27"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource TextBrush}"/>
+
+                <TextBlock Text="Параметры учёта времени и оплаты"
+                           FontSize="13"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           Margin="0,3,0,0"/>
+
+            </StackPanel>
+
+        </Grid>
+
+
+        <!-- FORM -->
+
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto">
+
+            <StackPanel>
+
+                <TextBlock Text="Название проекта"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="NameTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,18"/>
+
+
+                <TextBlock Text="Ставка в час (€)"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="HourlyRateTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,18"/>
+
+
+                <TextBlock Text="Договорная цена (€)"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="AgreedPriceTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,5"/>
+
+                <TextBlock Text="Можно оставить пустым"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           FontSize="12"
+                           Margin="3,0,0,18"/>
+
+
+                <TextBlock Text="Дневная цель (минут)"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="DailyTargetTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,5"/>
+
+                <TextBlock Text="Например: 480 = 8 часов"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           FontSize="12"
+                           Margin="3,0,0,18"/>
+
+
+                <TextBlock Text="Предупредить за (минут)"
+                           FontWeight="SemiBold"
+                           Margin="2,0,0,7"/>
+
+                <TextBox x:Name="ReminderBeforeTextBox"
+                         Style="{StaticResource InputTextBox}"
+                         Margin="0,0,0,18"/>
+
+
+                <CheckBox x:Name="NotificationsCheckBox"
+                          Content="Включить уведомления"
+                          FontSize="15"
+                          FontWeight="SemiBold"
+                          Foreground="{StaticResource TextBrush}"
+                          VerticalContentAlignment="Center"/>
+
+            </StackPanel>
+
+        </ScrollViewer>
+
+
+        <!-- ACTIONS -->
+
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,24,0,0">
+
+            <Button Content="Отмена"
+                    Style="{StaticResource CancelButton}"
+                    Margin="0,0,12,0"
+                    Click="Cancel_Click"/>
+
+            <Button Content="Сохранить"
+                    Style="{StaticResource SaveButton}"
+                    Click="Save_Click"/>
+
+        </StackPanel>
+
+    </Grid>
+
+</Window>

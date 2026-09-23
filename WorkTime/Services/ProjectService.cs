@@ -69,4 +69,71 @@ public sealed class ProjectService
 
         await _dbContext.SaveChangesAsync();
     }
+
+    public async Task<Project> UpdateAsync(
+    int projectId,
+    string name,
+    decimal hourlyRate,
+    decimal? agreedPrice,
+    int? dailyTargetMinutes,
+    int? reminderBeforeMinutes,
+    bool notificationsEnabled)
+    {
+        name = name.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException(
+                "Project name is required.",
+                nameof(name));
+        }
+
+        if (hourlyRate < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(hourlyRate),
+                "Hourly rate cannot be negative.");
+        }
+
+        if (agreedPrice is < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(agreedPrice),
+                "Agreed price cannot be negative.");
+        }
+
+        if (dailyTargetMinutes is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(dailyTargetMinutes),
+                "Daily target must be greater than zero.");
+        }
+
+        if (reminderBeforeMinutes is < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(reminderBeforeMinutes),
+                "Reminder cannot be negative.");
+        }
+
+        var project = await _dbContext.Projects
+            .SingleOrDefaultAsync(x => x.Id == projectId);
+
+        if (project is null)
+        {
+            throw new InvalidOperationException(
+                "Project does not exist.");
+        }
+
+        project.Name = name;
+        project.HourlyRate = hourlyRate;
+        project.AgreedPrice = agreedPrice;
+        project.DailyTargetMinutes = dailyTargetMinutes;
+        project.ReminderBeforeMinutes = reminderBeforeMinutes;
+        project.NotificationsEnabled = notificationsEnabled;
+
+        await _dbContext.SaveChangesAsync();
+
+        return project;
+    }
 }

@@ -154,9 +154,9 @@
                                             <Grid Margin="17,0,14,0">
 
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="42"/>
                                                     <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="30"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
 
                                                 <Border Grid.Column="0"
@@ -664,6 +664,14 @@
                         Style="{StaticResource AddProjectButton}"
                         Margin="12,0,0,0"
                         Click="NewProject_Click"/>
+
+                <Button Grid.Column="1"
+                        Content="⚙"
+                        ToolTip="Настройки проекта"
+                        Style="{StaticResource AddProjectButton}"
+                        FontSize="21"
+                        Margin="12,-119,0,119"
+                        Click="ProjectSettings_Click" RenderTransformOrigin="0.724,0.516"/>
 
             </Grid>
 

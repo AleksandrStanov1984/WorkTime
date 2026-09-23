@@ -196,6 +196,33 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 x => x.Id == project.Id);
     }
 
+    public async Task UpdateSelectedProjectAsync(
+    string name,
+    decimal hourlyRate,
+    decimal? agreedPrice,
+    int? dailyTargetMinutes,
+    int? reminderBeforeMinutes,
+    bool notificationsEnabled)
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        var project = await _projectService.UpdateAsync(
+            SelectedProject.Id,
+            name,
+            hourlyRate,
+            agreedPrice,
+            dailyTargetMinutes,
+            reminderBeforeMinutes,
+            notificationsEnabled);
+
+        SelectedProject = project;
+
+        OnPropertyChanged(nameof(Projects));
+    }
+
     public async Task RefreshTodayAsync()
     {
         TodayWorkedTime =

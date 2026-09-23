@@ -125,4 +125,34 @@ public partial class MainWindow : Window
 
         window.ShowDialog();
     }
+
+    private async void ProjectSettings_Click(
+    object sender,
+    RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedProject is null)
+        {
+            return;
+        }
+
+        var dialog =
+            new ProjectSettingsWindow(
+                ViewModel.SelectedProject)
+            {
+                Owner = this
+            };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        await ViewModel.UpdateSelectedProjectAsync(
+            dialog.ProjectName,
+            dialog.HourlyRate,
+            dialog.AgreedPrice,
+            dialog.DailyTargetMinutes,
+            dialog.ReminderBeforeMinutes,
+            dialog.NotificationsEnabled);
+    }
 }
