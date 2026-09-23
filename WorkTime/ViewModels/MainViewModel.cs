@@ -415,4 +415,35 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 targetMinutes);
         }
     }
+
+    public async Task DeleteSelectedProjectAsync()
+    {
+        if (SelectedProject is null)
+        {
+            return;
+        }
+
+        var projectId = SelectedProject.Id;
+
+        if (_timerService.ActiveProjectId == projectId &&
+            _timerService.State != WorkTimerState.Stopped)
+        {
+            await _timerService.FinishAsync();
+        }
+
+        await _projectService.DeleteAsync(projectId);
+
+        Projects =
+            await _projectService.GetActiveProjectsAsync();
+
+        OnPropertyChanged(nameof(Projects));
+
+        SelectedProject =
+            Projects.FirstOrDefault();
+
+        await RefreshTodayAsync();
+        await RefreshProjectAnalyticsAsync();
+
+        NotifyTimerStateChanged();
+    }
 }

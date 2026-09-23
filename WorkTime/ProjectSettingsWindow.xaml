@@ -301,21 +301,61 @@
 
         <!-- ACTIONS -->
 
-        <StackPanel Grid.Row="2"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,24,0,0">
+        <Grid Grid.Row="2"
+      Margin="0,24,0,0">
 
-            <Button Content="Отмена"
-                    Style="{StaticResource CancelButton}"
-                    Margin="0,0,12,0"
-                    Click="Cancel_Click"/>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
 
-            <Button Content="Сохранить"
-                    Style="{StaticResource SaveButton}"
-                    Click="Save_Click"/>
+            <Button Grid.Column="0"
+        Content="Удалить"
+        Style="{StaticResource CancelButton}"
+        Width="140"
+        HorizontalAlignment="Left"
+        Background="#B42318"
+        Foreground="White"
+        BorderBrush="#B42318"
+        Click="Delete_Click">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Border"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+                        </Border>
 
-        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver"
+                         Value="True">
+                                <Setter TargetName="Border"
+                            Property="Background"
+                            Value="#D92D20"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+            <StackPanel Grid.Column="1"
+                Orientation="Horizontal">
+
+                <Button Content="Отмена"
+                Style="{StaticResource CancelButton}"
+                Margin="0,0,12,0"
+                Click="Cancel_Click"/>
+
+                <Button Content="Сохранить"
+                Style="{StaticResource SaveButton}"
+                Click="Save_Click"/>
+
+            </StackPanel>
+
+        </Grid>
 
     </Grid>
 

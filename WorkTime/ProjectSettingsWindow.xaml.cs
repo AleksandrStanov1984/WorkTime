@@ -35,6 +35,8 @@ public partial class ProjectSettingsWindow : Window
             project.NotificationsEnabled;
     }
 
+    public bool DeleteRequested { get; private set; }
+
     public string ProjectName { get; private set; } =
         string.Empty;
 
@@ -163,6 +165,26 @@ public partial class ProjectSettingsWindow : Window
         NotificationsEnabled =
             NotificationsCheckBox.IsChecked == true;
 
+        DialogResult = true;
+    }
+
+    private void Delete_Click(
+    object sender,
+    RoutedEventArgs e)
+    {
+        var result = MessageBox.Show(
+            this,
+            "Удалить проект и всю его историю?\n\nЭто действие нельзя отменить.",
+            "WorkTime",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        DeleteRequested = true;
         DialogResult = true;
     }
 

@@ -136,4 +136,31 @@ public sealed class ProjectService
 
         return project;
     }
+
+    public async Task DeleteAsync(int projectId)
+    {
+        await using var transaction =
+            await _dbContext.Database.BeginTransactionAsync();
+
+        var project = await _dbContext.Projects
+            .SingleOrDefaultAsync(x => x.Id == projectId);
+
+        if (project is null)
+        {
+            return;
+        }
+
+        await _dbContext.WorkSessions
+            .Where(x => x.ProjectId == projectId)
+            .ExecuteDeleteAsync();
+
+        await _dbContext.PauseIntervals
+            .Where(x => x.ProjectId == projectId)
+            .ExecuteDeleteAsync();
+
+        _dbContext.Projects.Remove(project);
+
+        await _dbContext.SaveChangesAsync();
+        await transaction.CommitAsync();
+    }
 }

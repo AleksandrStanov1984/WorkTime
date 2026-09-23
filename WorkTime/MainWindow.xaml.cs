@@ -28,7 +28,9 @@ public partial class MainWindow : Window
 
         _trayIcon = new Forms.NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(
+        Environment.ProcessPath!)
+        ?? System.Drawing.SystemIcons.Application,
             Text = "WorkTime — Stopped",
             Visible = true
         };
@@ -192,6 +194,13 @@ public partial class MainWindow : Window
 
         if (dialog.ShowDialog() != true)
         {
+            return;
+        }
+
+        if (dialog.DeleteRequested)
+        {
+            await ViewModel.DeleteSelectedProjectAsync();
+            UpdateTrayState();
             return;
         }
 
