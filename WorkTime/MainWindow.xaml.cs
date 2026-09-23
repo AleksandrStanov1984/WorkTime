@@ -13,7 +13,6 @@ public partial class MainWindow : Window
 {
     private readonly DispatcherTimer _displayTimer;
     private readonly Forms.NotifyIcon _trayIcon;
-    private bool _allowClose;
 
     public MainWindow()
     {
@@ -75,16 +74,8 @@ public partial class MainWindow : Window
         UpdateTrayState();
     }
 
-    protected override void OnClosing(
-        CancelEventArgs e)
+    protected override void OnClosing(CancelEventArgs e)
     {
-        if (!_allowClose)
-        {
-            e.Cancel = true;
-            Hide();
-            return;
-        }
-
         _displayTimer.Stop();
 
         _trayIcon.Visible = false;
@@ -110,9 +101,7 @@ public partial class MainWindow : Window
 
     private void ExitApplication()
     {
-        _allowClose = true;
         Close();
-        Application.Current.Shutdown();
     }
 
     private void UpdateTrayState()
